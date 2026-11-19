@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Pasarela de pagos')}"></head>
+<body>
+<style>
+  .centro { max-width: 520px; margin: 40px auto; padding: 0 16px; }
+  .aviso-sim { background: #fff4d6; color: #8a5a00; border-radius: 8px; padding: 8px 12px; font-size: .85rem; margin-bottom: 16px; }
+  .valor { font-size: 2rem; font-weight: 700; margin: 6px 0 14px; }
+  .fila-botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  ul.det { margin: 0 0 6px; padding-left: 18px; font-size: .92rem; }
+</style>
+<div class="centro">
+  <div class="aviso-sim">Pasarela de pagos <strong>simulada</strong>: no se mueve dinero real. Elige el resultado del pago.</div>
+
+  <div class="tarjeta">
+    <h2>Pagar a la copropiedad</h2>
+    <p class="nota" id="ref"></p>
+    <div class="valor" id="valor"></div>
+    <p class="nota" id="inmueble"></p>
+    <ul class="det" id="detalle"></ul>
+    <div class="msg-error" id="error" hidden></div>
+    <div class="fila-botones">
+      <button type="button" class="btn primario" id="btnAprobar">Aprobar pago</button>
+      <button type="button" class="btn peligro" id="btnRechazar">Rechazar pago</button>
+      <button type="button" class="btn" id="btnVolver">Cancelar y volver</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const referencia = location.pathname.split('/').pop();
+let pagoId = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function llamar(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('Error ' + r.status));
+  }
+  return r.json();
+}
+
+function mostrarError(msg) {
+  $('error').textContent = msg;
+  $('error').hidden = false;
+}
+
+async function responder(aprobado) {
+  try {
+    await llamar('/api/pagos/pasarela/' + encodeURIComponent(referencia) + '/simulada?aprobado=' + aprobado,
+      { method: 'POST' });
+    location.href = '/mis-obligaciones?pago=' + pagoId;
+  } catch (e) { mostrarError(e.message); }
+}
+
+$('btnAprobar').addEventListener('click', () => responder(true));
+$('btnRechazar').addEventListener('click', () => responder(false));
+$('btnVolver').addEventListener('click', () => { location.href = '/mis-obligaciones?pago=' + pagoId; });
+
+(async () => {
+  try {
+    const p = await llamar('/api/pagos/pasarela/' + encodeURIComponent(referencia));
+    pagoId = p.pagoId;
+    $('ref').textContent = 'Referencia ' + p.referencia + ' · ' + p.proveedor;
+    $('valor').textContent = COP.format(p.valor);
+    $('inmueble').textContent = 'Inmueble: ' + p.inmueble;
+    $('detalle').innerHTML = p.detalles.map(d =>
+      '<li>' + esc(d.concepto) + ' ' + esc(d.periodo) + ' — ' + COP.format(d.valor) + '</li>').join('');
+    if (p.estado !== 'PENDIENTE') {
+      $('btnAprobar').disabled = true;
+      $('btnRechazar').disabled = true;
+      mostrarError('Este pago ya fue procesado.');
+    }
+  } catch (e) {
+    mostrarError(e.message);
+    $('btnAprobar').disabled = true;
+    $('btnRechazar').disabled = true;
+  }
+})();
+</script>
+</body>
+</html>

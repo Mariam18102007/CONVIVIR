@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+
+<!-- Cabecera común: se usa con ~{fragments :: cabecera('Título')} -->
+<head th:fragment="cabecera(titulo)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${titulo} + ' · Plataforma PH'">Plataforma PH</title>
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+
+<body>
+<!-- Menú lateral común: se usa con ~{fragments :: menu} -->
+<aside th:fragment="menu" class="sidebar">
+  <div class="marca">
+    Plataforma PH
+    <small>Gestión de propiedad horizontal</small>
+  </div>
+
+  <nav>
+    <th:block th:each="item : ${menu}">
+      <a th:if="${item.disponible()}"
+         th:href="@{${item.url()}}"
+         th:text="${item.titulo()}"
+         th:classappend="${item.activo()} ? 'activo' : ''"
+         class="item">Opción</a>
+      <span th:unless="${item.disponible()}" class="item pronto">
+        <span th:text="${item.titulo()}">Opción</span>
+        <small>pronto</small>
+      </span>
+    </th:block>
+  </nav>
+
+  <div class="perfil">
+    <strong th:text="${usuario}">usuario</strong>
+    <span th:text="${rol}">Rol</span>
+    <form th:action="@{/logout}" method="post">
+      <button type="submit" class="btn-salir">Cerrar sesión</button>
+    </form>
+  </div>
+</aside>
+</body>
+</html>

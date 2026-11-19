@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Vinculaciones')}"></head>
+<body>
+<style>
+  .acciones { white-space: normal; }
+  .acciones .btn { margin: 2px 0 2px 6px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Vinculaciones</h1>
+        <p>Relación de cada persona con un inmueble: propietario, arrendatario o residente autorizado.</p>
+      </div>
+      <button class="btn primario" id="btnNueva" type="button">+ Nueva vinculación</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Ver por
+        <select id="fModo">
+          <option value="inmueble">Inmueble</option>
+          <option value="persona">Persona</option>
+        </select>
+      </label>
+      <label><span id="lblObjeto">Inmueble</span>
+        <select id="fObjeto"></select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="VIGENTE">Vigentes</option>
+          <option value="FINALIZADA">Finalizadas</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Inmueble</th><th>Persona</th><th>Vínculo</th><th>Desde</th>
+            <th>Hasta</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Nueva vinculación -->
+<dialog id="dlgNueva">
+  <h2>Nueva vinculación</h2>
+  <form id="formNueva">
+    <div class="campo">
+      <label for="nInmueble">Inmueble</label>
+      <select id="nInmueble" required></select>
+    </div>
+    <div class="campo">
+      <label for="nPersona">Persona</label>
+      <select id="nPersona" required></select>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="nTipo">Tipo de vínculo</label>
+        <select id="nTipo" required>
+          <option value="">Seleccione...</option>
+          <option value="PROPIETARIO_RESIDENTE">Propietario residente</option>
+          <option value="PROPIETARIO_NO_RESIDENTE">Propietario no residente</option>
+          <option value="ARRENDATARIO">Arrendatario</option>
+          <option value="RESIDENTE_AUTORIZADO">Residente autorizado</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="nFecha">Fecha de inicio</label>
+        <input id="nFecha" type="date" required>
+      </div>
+    </div>
+    <p class="nota">Solo aparecen inmuebles y personas activos. Un inmueble solo puede tener un propietario vigente.</p>
+    <div class="msg-error" id="errorNueva" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgNueva">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Finalizar -->
+<dialog id="dlgFinalizar">
+  <h2>Finalizar vinculación</h2>
+  <form id="formFinalizar">
+    <p class="nota" id="finDetalle"></p>
+    <div class="campo">
+      <label for="fFin">Fecha de fin</label>
+      <input id="fFin" type="date" required>
+    </div>
+    <p class="nota">La vinculación no se borra: queda en el historial como finalizada.</p>
+    <div class="msg-error" id="errorFin" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgFinalizar">Cancelar</button>
+      <button type="submit" class="btn peligro">Finalizar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Corregir tipo -->
+<dialog id="dlgTipo">
+  <h2>Corregir tipo de vínculo</h2>
+  <form id="formTipo">
+    <p class="nota" id="tipoDetalle"></p>
+    <div class="campo">
+      <label for="cTipo">Tipo correcto</label>
+      <select id="cTipo" required>
+        <option value="PROPIETARIO_RESIDENTE">Propietario residente</option>
+        <option value="PROPIETARIO_NO_RESIDENTE">Propietario no residente</option>
+        <option value="ARRENDATARIO">Arrendatario</option>
+        <option value="RESIDENTE_AUTORIZADO">Residente autorizado</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="cMotivo">Motivo de la corrección (obligatorio)</label>
+      <input id="cMotivo" required maxlength="200">
+    </div>
+    <div class="msg-error" id="errorTipo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgTipo">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const VINCULOS = {
+  PROPIETARIO_RESIDENTE: 'Propietario residente',
+  PROPIETARIO_NO_RESIDENTE: 'Propietario no residente',
+  ARRENDATARIO: 'Arrendatario',
+  RESIDENTE_AUTORIZADO: 'Residente autorizado'
+};
+let inmuebles = [], personas = [], lista = [], objetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hoy = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+const nombreDe = p => p.nombres + ' ' + p.apellidos;
+
+function llenarSelector() {
+  if ($('fModo').value === 'inmueble') {
+    $('lblObjeto').textContent = 'Inmueble';
+    $('fObjeto').innerHTML = '<option value="">Seleccione un inmueble...</option>' +
+      inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}${i.activo ? '' : ' (inactivo)'}</option>`).join('');
+    $('fEstado').disabled = false;
+  } else {
+    $('lblObjeto').textContent = 'Persona';
+    $('fObjeto').innerHTML = '<option value="">Seleccione una persona...</option>' +
+      personas.map(p => `<option value="${p.id}">${esc(nombreDe(p))} (${esc(p.numeroDocumento)})${p.activo ? '' : ' (inactivo)'}</option>`).join('');
+    $('fEstado').value = 'VIGENTE';
+    $('fEstado').disabled = true;   // la API de personas solo devuelve las vigentes
+  }
+  lista = [];
+  pintar();
+}
+
+async function cargar() {
+  const id = $('fObjeto').value;
+  if (!id) { lista = []; pintar(); return; }
+  const url = $('fModo').value === 'inmueble'
+    ? '/api/inmuebles/' + id + '/vinculaciones?estado=' + $('fEstado').value
+    : '/api/integrantes/' + id + '/vinculaciones';
+  try {
+    lista = await api(url);
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  if (!$('fObjeto').value) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">Seleccione un inmueble o una persona para ver sus vinculaciones.</td></tr>';
+    return;
+  }
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No hay vinculaciones para mostrar.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(v => {
+    const vigente = v.estado === 'VIGENTE';
+    return `
+    <tr>
+      <td><strong>${esc(v.inmueble ? v.inmueble.identificacion : '')}</strong></td>
+      <td>${v.integrante ? esc(nombreDe(v.integrante)) : ''}</td>
+      <td title="${esc(v.motivoCorreccion)}">${esc(VINCULOS[v.tipoVinculo] || v.tipoVinculo)}</td>
+      <td>${esc(v.fechaInicio)}</td>
+      <td>${v.fechaFin ? esc(v.fechaFin) : '—'}</td>
+      <td>${vigente ? '<span class="chip ok">Vigente</span>' : '<span class="chip off">Finalizada</span>'}</td>
+      <td class="acciones">${vigente
+        ? `<button class="btn" data-tipo="${v.id}">Corregir tipo</button>
+           <button class="btn peligro" data-finalizar="${v.id}">Finalizar</button>`
+        : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+const buscarVinc = id => lista.find(v => String(v.id) === String(id));
+const detalle = v => (v.integrante ? nombreDe(v.integrante) : '') + ' — ' +
+  (v.inmueble ? v.inmueble.identificacion : '') + ' (' + (VINCULOS[v.tipoVinculo] || v.tipoVinculo) + ')';
+
+/* ---------- Nueva ---------- */
+function abrirNueva() {
+  $('nInmueble').innerHTML = '<option value="">Seleccione...</option>' +
+    inmuebles.filter(i => i.activo).map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('nPersona').innerHTML = '<option value="">Seleccione...</option>' +
+    personas.filter(p => p.activo).map(p => `<option value="${p.id}">${esc(nombreDe(p))} (${esc(p.numeroDocumento)})</option>`).join('');
+  if ($('fObjeto').value) {
+    if ($('fModo').value === 'inmueble') $('nInmueble').value = $('fObjeto').value;
+    else $('nPersona').value = $('fObjeto').value;
+  }
+  $('nTipo').value = '';
+  $('nFecha').value = hoy();
+  $('errorNueva').hidden = true;
+  $('dlgNueva').showModal();
+}
+
+$('formNueva').addEventListener('submit', async e => {
+  e.preventDefault();
+  const inmuebleId = Number($('nInmueble').value);
+  const body = {
+    integranteId: Number($('nPersona').value),
+    inmuebleId: inmuebleId,
+    tipoVinculo: $('nTipo').value,
+    fechaInicio: $('nFecha').value
+  };
+  try {
+    await api('/api/vinculaciones', { method: 'POST', body: JSON.stringify(body) });
+    $('dlgNueva').close();
+    aviso('Vinculación creada.');
+    $('fModo').value = 'inmueble';
+    llenarSelector();
+    $('fObjeto').value = String(inmuebleId);
+    $('fEstado').value = 'VIGENTE';
+    await cargar();
+  } catch (err) {
+    $('errorNueva').textContent = err.message;
+    $('errorNueva').hidden = false;
+  }
+});
+
+/* ---------- Finalizar ---------- */
+$('formFinalizar').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/vinculaciones/' + objetivo.id + '/finalizar?fechaFin=' + encodeURIComponent($('fFin').value),
+      { method: 'PATCH' });
+    $('dlgFinalizar').close();
+    aviso('Vinculación finalizada.');
+    await cargar();
+  } catch (err) {
+    $('errorFin').textContent = err.message;
+    $('errorFin').hidden = false;
+  }
+});
+
+/* ---------- Corregir tipo ---------- */
+$('formTipo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const motivo = $('cMotivo').value.trim();
+  if (!motivo) {
+    $('errorTipo').textContent = 'El motivo es obligatorio.';
+    $('errorTipo').hidden = false;
+    return;
+  }
+  try {
+    await api('/api/vinculaciones/' + objetivo.id + '/tipo?tipoVinculo=' + encodeURIComponent($('cTipo').value)
+      + '&motivo=' + encodeURIComponent(motivo), { method: 'PATCH' });
+    $('dlgTipo').close();
+    aviso('Tipo de vínculo corregido.');
+    await cargar();
+  } catch (err) {
+    $('errorTipo').textContent = err.message;
+    $('errorTipo').hidden = false;
+  }
+});
+
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.finalizar) {
+    objetivo = buscarVinc(b.dataset.finalizar);
+    $('finDetalle').textContent = detalle(objetivo);
+    $('fFin').value = hoy();
+    $('fFin').min = objetivo.fechaInicio;
+    $('errorFin').hidden = true;
+    $('dlgFinalizar').showModal();
+  }
+  if (b.dataset.tipo) {
+    objetivo = buscarVinc(b.dataset.tipo);
+    $('tipoDetalle').textContent = detalle(objetivo);
+    $('cTipo').value = objetivo.tipoVinculo;
+    $('cMotivo').value = '';
+    $('errorTipo').hidden = true;
+    $('dlgTipo').showModal();
+  }
+});
+
+document.querySelectorAll('[data-cerrar]').forEach(b => {
+  b.addEventListener('click', () => $(b.dataset.cerrar).close());
+});
+$('fModo').addEventListener('change', llenarSelector);
+$('fObjeto').addEventListener('change', cargar);
+$('fEstado').addEventListener('change', cargar);
+$('btnNueva').addEventListener('click', abrirNueva);
+
+(async () => {
+  try {
+    const r = await Promise.all([api('/api/inmuebles'), api('/api/integrantes')]);
+    inmuebles = r[0];
+    personas = r[1];
+  } catch (e) { aviso(e.message, true); }
+  llenarSelector();
+})();
+</script>
+</body>
+</html>

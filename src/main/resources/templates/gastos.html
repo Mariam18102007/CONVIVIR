@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Gastos')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .num { text-align: right; white-space: nowrap; }
+  .totales { margin: 0 0 10px; font-size: .9rem; color: var(--texto-suave); }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido" th:attr="data-admin=${admin}">
+    <header class="encabezado fila">
+      <div>
+        <h1>Gastos</h1>
+        <p id="subtitulo">Gastos registrados de la copropiedad.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button" hidden>+ Registrar gasto</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Desde <input type="date" id="fDesde"></label>
+      <label>Hasta <input type="date" id="fHasta"></label>
+      <button class="btn" id="btnMes" type="button">Mes actual</button>
+      <button class="btn" id="btnTodos" type="button">Ver todos</button>
+    </section>
+
+    <p class="totales" id="totales"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Fecha</th><th>Concepto</th><th class="num">Valor</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Registrar gasto -->
+<dialog id="dlgNuevo">
+  <h2>Registrar gasto</h2>
+  <form id="formNuevo">
+    <div class="campo">
+      <label for="gConcepto">Concepto</label>
+      <input id="gConcepto" required maxlength="120" placeholder="Ej.: Mantenimiento del ascensor">
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="gValor">Valor</label>
+        <input id="gValor" type="number" min="1" step="1" required>
+      </div>
+      <div class="campo">
+        <label for="gFecha">Fecha</label>
+        <input id="gFecha" type="date" required>
+      </div>
+    </div>
+    <div class="msg-error" id="errorNuevo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarNuevo">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Anular gasto -->
+<dialog id="dlgAnular">
+  <h2>Anular gasto</h2>
+  <form id="formAnular">
+    <p class="nota" id="anularDetalle"></p>
+    <div class="campo">
+      <label for="motivo">Motivo (obligatorio)</label>
+      <input id="motivo" required maxlength="200" placeholder="Registrado por error...">
+    </div>
+    <div class="msg-error" id="errorAnular" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarAnular">Cancelar</button>
+      <button type="submit" class="btn peligro">Anular gasto</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const ADMIN = document.querySelector('main.contenido').dataset.admin === 'true';
+let lista = [], objetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const fmt = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 7000);
+}
+
+function mesActual() {
+  const d = new Date();
+  $('fDesde').value = fmt(new Date(d.getFullYear(), d.getMonth(), 1));
+  $('fHasta').value = fmt(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fDesde').value) p.set('desde', $('fDesde').value);
+  if ($('fHasta').value) p.set('hasta', $('fHasta').value);
+  try {
+    lista = await api('/api/gastos?' + p.toString());
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="5" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const validos = lista.filter(g => !g.anulado);
+  const total = validos.reduce((s, g) => s + g.valor, 0);
+  $('totales').textContent = validos.length + ' gastos · Total ' + dinero(total);
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="5" class="vacio">No hay gastos en ese periodo.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(g => `
+    <tr>
+      <td>${esc(g.fecha)}</td>
+      <td>${esc(g.concepto)}</td>
+      <td class="num">${dinero(g.valor)}</td>
+      <td>${g.anulado
+        ? '<span class="chip off" title="' + esc(g.motivoAnulacion) + '">Anulado</span>'
+        : '<span class="chip ok">Registrado</span>'}</td>
+      <td class="acciones">${ADMIN && !g.anulado
+        ? `<button class="btn peligro" data-anular="${g.id}">Anular</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+$('fDesde').addEventListener('change', cargar);
+$('fHasta').addEventListener('change', cargar);
+$('btnMes').addEventListener('click', () => { mesActual(); cargar(); });
+$('btnTodos').addEventListener('click', () => { $('fDesde').value = ''; $('fHasta').value = ''; cargar(); });
+
+if (ADMIN) {
+  $('btnNuevo').hidden = false;
+  $('subtitulo').textContent = 'Registra y consulta los gastos de la copropiedad.';
+
+  $('btnNuevo').addEventListener('click', () => {
+    $('formNuevo').reset();
+    $('errorNuevo').hidden = true;
+    $('gFecha').value = fmt(new Date());
+    $('gFecha').max = fmt(new Date());
+    $('dlgNuevo').showModal();
+  });
+  $('btnCancelarNuevo').addEventListener('click', () => $('dlgNuevo').close());
+
+  $('formNuevo').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await api('/api/gastos', {
+        method: 'POST',
+        body: JSON.stringify({
+          concepto: $('gConcepto').value.trim(),
+          valor: Number($('gValor').value),
+          fecha: $('gFecha').value
+        })
+      });
+      $('dlgNuevo').close();
+      aviso('Gasto registrado.');
+      await cargar();
+    } catch (err) {
+      $('errorNuevo').textContent = err.message;
+      $('errorNuevo').hidden = false;
+    }
+  });
+
+  $('filas').addEventListener('click', e => {
+    const b = e.target.closest('button[data-anular]');
+    if (!b) return;
+    objetivo = lista.find(g => String(g.id) === b.dataset.anular);
+    $('anularDetalle').textContent = objetivo.fecha + ' — ' + objetivo.concepto + ' — ' + dinero(objetivo.valor);
+    $('motivo').value = '';
+    $('errorAnular').hidden = true;
+    $('dlgAnular').showModal();
+  });
+  $('btnCancelarAnular').addEventListener('click', () => $('dlgAnular').close());
+
+  $('formAnular').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await api('/api/gastos/' + objetivo.id + '/anular?motivo=' + encodeURIComponent($('motivo').value.trim()),
+        { method: 'PATCH' });
+      $('dlgAnular').close();
+      aviso('Gasto anulado.');
+      await cargar();
+    } catch (err) {
+      $('errorAnular').textContent = err.message;
+      $('errorAnular').hidden = false;
+    }
+  });
+} else {
+  $('subtitulo').textContent = 'Gastos registrados de la copropiedad (solo lectura).';
+}
+
+mesActual();
+cargar();
+</script>
+</body>
+</html>

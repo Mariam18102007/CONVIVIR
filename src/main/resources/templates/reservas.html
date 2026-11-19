@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Reservas')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  h2.sub { font-size: 1.1rem; margin: 28px 0 10px; }
+  .ancho { width: min(560px, 94vw); }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Reservas</h1>
+      <p>Confirma, rechaza y finaliza las reservas de zonas comunes, y configura la tarifa de cada zona.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="SOLICITADA">Solicitadas</option>
+          <option value="CONFIRMADA">Confirmadas</option>
+          <option value="FINALIZADA">Finalizadas</option>
+          <option value="RECHAZADA">Rechazadas</option>
+          <option value="CANCELADA">Canceladas</option>
+        </select>
+      </label>
+      <label>Zona
+        <select id="fZona"><option value="">Todas</option></select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Zona</th><th>Fecha y horario</th><th>Solicitante</th><th>Cobro a</th>
+            <th class="num">Valor</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+
+    <h2 class="sub">Zonas comunes y tarifas</h2>
+    <p class="nota">Una zona es un inmueble cuyo tipo tiene marcada la opción "permite reserva".
+      Para que se pueda reservar debe tener tarifa y horario.</p>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Zona</th><th>Tipo</th><th>Cobro</th><th class="num">Tarifa</th><th>Horario</th><th></th></tr>
+        </thead>
+        <tbody id="filasZonas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Rechazar -->
+<dialog id="dlgRechazar" class="ancho">
+  <h2>Rechazar reserva</h2>
+  <form id="formRechazar">
+    <p class="nota" id="rechazarDetalle"></p>
+    <div class="campo">
+      <label for="rzMotivo">Motivo (obligatorio)</label>
+      <input id="rzMotivo" required maxlength="150">
+    </div>
+    <div class="msg-error" id="errorRechazar" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarRechazo">Volver</button>
+      <button type="submit" class="btn peligro">Rechazar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Finalizar -->
+<dialog id="dlgFinalizar" class="ancho">
+  <h2>Finalizar reserva</h2>
+  <form id="formFinalizar">
+    <p class="nota" id="finalizarDetalle"></p>
+    <div class="campo">
+      <label for="fnFecha">Fecha de finalización</label>
+      <input id="fnFecha" type="date" required>
+    </div>
+    <div class="msg-error" id="errorFinalizar" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarFin">Volver</button>
+      <button type="submit" class="btn primario">Finalizar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Multa -->
+<dialog id="dlgMulta" class="ancho">
+  <h2>Registrar multa por incumplimiento</h2>
+  <form id="formMulta">
+    <p class="nota" id="multaDetalle"></p>
+    <div class="campo">
+      <label for="mtInmueble">Inmueble propietario al que se imputa</label>
+      <select id="mtInmueble" required></select>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="mtValor">Valor de la multa</label>
+        <input id="mtValor" type="number" min="1" step="1" required>
+      </div>
+      <div class="campo">
+        <label for="mtMotivo">Motivo</label>
+        <input id="mtMotivo" required maxlength="150">
+      </div>
+    </div>
+    <p class="nota">La multa es responsabilidad exclusiva del propietario: el arrendatario no la ve ni la paga.</p>
+    <div class="msg-error" id="errorMulta" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarMulta">Volver</button>
+      <button type="submit" class="btn primario">Registrar multa</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Configurar zona -->
+<dialog id="dlgZona" class="ancho">
+  <h2 id="zonaTitulo">Configurar zona</h2>
+  <form id="formZona">
+    <div class="dos">
+      <div class="campo">
+        <label for="zUnidad">Unidad de cobro</label>
+        <select id="zUnidad" required>
+          <option value="HORA">Por hora</option>
+          <option value="DIA">Por día</option>
+          <option value="EVENTO">Por evento</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="zTarifa">Tarifa</label>
+        <input id="zTarifa" type="number" min="0" step="1" required>
+      </div>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="zApertura">Apertura</label>
+        <input id="zApertura" type="time" required>
+      </div>
+      <div class="campo">
+        <label for="zCierre">Cierre</label>
+        <input id="zCierre" type="time" required>
+      </div>
+    </div>
+    <p class="nota">Cada reserva empieza y termina el mismo día dentro de este horario. Con tarifa 0 la zona es gratis y no genera cobro.</p>
+    <div class="msg-error" id="errorZona" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarZona">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let lista = [], zonas = [], inmuebles = [], objetivo = null, zonaObjetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const hh = d => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+const hoyTexto = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const franja = (ini, fin) => {
+  const a = new Date(ini), b = new Date(fin);
+  return a.toLocaleDateString('es-CO') + ' · ' + hh(a) + ' a ' + hh(b);
+};
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo completar la operación.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+function mostrarError(id, msg) {
+  $(id).textContent = msg;
+  $(id).hidden = false;
+}
+
+/* ---------- Reservas ---------- */
+const ESTADOS = { SOLICITADA: ['warn', 'Solicitada'], CONFIRMADA: ['ok', 'Confirmada'],
+                  FINALIZADA: ['', 'Finalizada'], RECHAZADA: ['off', 'Rechazada'], CANCELADA: ['off', 'Cancelada'] };
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fEstado').value) p.set('estado', $('fEstado').value);
+  if ($('fZona').value) p.set('zonaId', $('fZona').value);
+  try {
+    lista = await api('/api/reservas?' + p.toString());
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudieron cargar las reservas.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function acciones(r) {
+  const empezo = new Date(r.inicio).toDateString() <= new Date().toDateString() || new Date(r.inicio) <= new Date();
+  const partes = [];
+  if (r.estado === 'SOLICITADA') {
+    partes.push(`<button class="btn primario" data-confirmar="${r.id}">Confirmar</button>`);
+    partes.push(`<button class="btn peligro" data-rechazar="${r.id}">Rechazar</button>`);
+  }
+  if (r.estado === 'CONFIRMADA') {
+    partes.push(`<button class="btn" data-finalizar="${r.id}">Finalizar</button>`);
+  }
+  if ((r.estado === 'CONFIRMADA' || r.estado === 'FINALIZADA') && !r.multaId && empezo) {
+    partes.push(`<button class="btn" data-multa="${r.id}">Multa</button>`);
+  }
+  return partes.join(' ');
+}
+
+function pintar() {
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay reservas con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(r => {
+    const e = ESTADOS[r.estado] || ['', r.estado];
+    return `
+    <tr>
+      <td><strong>#${r.id}</strong></td>
+      <td>${esc(r.zona)}<br><span class="nota" style="margin:0">${esc(r.finalidad)}</span></td>
+      <td>${esc(franja(r.inicio, r.fin))}</td>
+      <td>${esc(r.solicitante)}</td>
+      <td>${esc(r.inmueble)}</td>
+      <td class="num">${dinero(r.valor)}</td>
+      <td><span class="chip ${e[0]}">${e[1]}</span>
+        ${r.motivo ? '<br><span class="nota" style="margin:0">' + esc(r.motivo) + '</span>' : ''}
+        ${r.multaId ? '<br><span class="nota" style="margin:0">Multa: ' + dinero(r.multaValor) + ' · ' + esc(r.motivoMulta) + '</span>' : ''}</td>
+      <td class="acciones">${acciones(r)}</td>
+    </tr>`;
+  }).join('');
+}
+
+$('fEstado').addEventListener('change', cargar);
+$('fZona').addEventListener('change', cargar);
+
+$('filas').addEventListener('click', async e => {
+  const bc = e.target.closest('button[data-confirmar]');
+  if (bc) {
+    try {
+      await api('/api/reservas/' + bc.dataset.confirmar + '/confirmar', { method: 'PATCH' });
+      aviso('Reserva confirmada. Se generó el cobro del alquiler.');
+      await cargar();
+    } catch (err) { aviso(err.message, true); }
+    return;
+  }
+  const br = e.target.closest('button[data-rechazar]');
+  if (br) {
+    objetivo = lista.find(r => String(r.id) === br.dataset.rechazar);
+    $('rechazarDetalle').textContent = '#' + objetivo.id + ' · ' + objetivo.zona + ' · ' + franja(objetivo.inicio, objetivo.fin);
+    $('rzMotivo').value = '';
+    $('errorRechazar').hidden = true;
+    $('dlgRechazar').showModal();
+    return;
+  }
+  const bf = e.target.closest('button[data-finalizar]');
+  if (bf) {
+    objetivo = lista.find(r => String(r.id) === bf.dataset.finalizar);
+    $('finalizarDetalle').textContent = '#' + objetivo.id + ' · ' + objetivo.zona + ' · ' + franja(objetivo.inicio, objetivo.fin);
+    $('fnFecha').value = hoyTexto();
+    $('fnFecha').max = hoyTexto();
+    $('errorFinalizar').hidden = true;
+    $('dlgFinalizar').showModal();
+    return;
+  }
+  const bm = e.target.closest('button[data-multa]');
+  if (bm) {
+    objetivo = lista.find(r => String(r.id) === bm.dataset.multa);
+    $('multaDetalle').textContent = '#' + objetivo.id + ' · ' + objetivo.zona + ' · ' + franja(objetivo.inicio, objetivo.fin);
+    $('mtInmueble').innerHTML = inmuebles.map(i =>
+      `<option value="${i.id}" ${i.id === objetivo.inmuebleId ? 'selected' : ''}>${esc(i.identificacion)}</option>`).join('');
+    $('mtValor').value = '';
+    $('mtMotivo').value = '';
+    $('errorMulta').hidden = true;
+    $('dlgMulta').showModal();
+  }
+});
+
+$('formRechazar').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/reservas/' + objetivo.id + '/rechazar?motivo=' + encodeURIComponent($('rzMotivo').value.trim()),
+      { method: 'PATCH' });
+    $('dlgRechazar').close();
+    aviso('Reserva rechazada.');
+    await cargar();
+  } catch (err) { mostrarError('errorRechazar', err.message); }
+});
+$('btnCancelarRechazo').addEventListener('click', () => $('dlgRechazar').close());
+
+$('formFinalizar').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/reservas/' + objetivo.id + '/finalizar?fecha=' + encodeURIComponent($('fnFecha').value),
+      { method: 'PATCH' });
+    $('dlgFinalizar').close();
+    aviso('Reserva finalizada.');
+    await cargar();
+  } catch (err) { mostrarError('errorFinalizar', err.message); }
+});
+$('btnCancelarFin').addEventListener('click', () => $('dlgFinalizar').close());
+
+$('formMulta').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/reservas/' + objetivo.id + '/multa', {
+      method: 'POST',
+      body: JSON.stringify({
+        inmuebleId: Number($('mtInmueble').value),
+        valor: Number($('mtValor').value),
+        motivo: $('mtMotivo').value.trim()
+      })
+    });
+    $('dlgMulta').close();
+    aviso('Multa registrada en las obligaciones del inmueble.');
+    await cargar();
+  } catch (err) { mostrarError('errorMulta', err.message); }
+});
+$('btnCancelarMulta').addEventListener('click', () => $('dlgMulta').close());
+
+/* ---------- Zonas ---------- */
+async function cargarZonas() {
+  try {
+    zonas = await api('/api/reservas/admin/zonas');
+    $('fZona').innerHTML = '<option value="">Todas</option>' +
+      zonas.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('');
+    if (!zonas.length) {
+      $('filasZonas').innerHTML = '<tr><td colspan="6" class="vacio">No hay zonas. Crea un tipo de inmueble con "permite reserva" y registra inmuebles de ese tipo.</td></tr>';
+      return;
+    }
+    $('filasZonas').innerHTML = zonas.map(z => `
+      <tr>
+        <td><strong>${esc(z.nombre)}</strong></td>
+        <td>${esc(z.tipo)}</td>
+        <td>${z.configurada ? esc(z.unidadEtiqueta) : '<span class="chip off">Sin configurar</span>'}</td>
+        <td class="num">${z.configurada ? dinero(z.tarifa) : '—'}</td>
+        <td>${z.configurada ? esc(z.horaApertura) + ' a ' + esc(z.horaCierre) : '—'}</td>
+        <td class="acciones"><button class="btn" data-zona="${z.id}">Configurar</button></td>
+      </tr>`).join('');
+  } catch (e) { aviso(e.message, true); }
+}
+
+$('filasZonas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-zona]');
+  if (!b) return;
+  zonaObjetivo = zonas.find(z => String(z.id) === b.dataset.zona);
+  $('zonaTitulo').textContent = 'Configurar ' + zonaObjetivo.nombre;
+  $('zUnidad').value = zonaObjetivo.configurada ? zonaObjetivo.unidadCobro : 'HORA';
+  $('zTarifa').value = zonaObjetivo.configurada ? zonaObjetivo.tarifa : '';
+  $('zApertura').value = zonaObjetivo.configurada ? zonaObjetivo.horaApertura : '08:00';
+  $('zCierre').value = zonaObjetivo.configurada ? zonaObjetivo.horaCierre : '22:00';
+  $('errorZona').hidden = true;
+  $('dlgZona').showModal();
+});
+$('btnCancelarZona').addEventListener('click', () => $('dlgZona').close());
+
+$('formZona').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/reservas/admin/zonas/' + zonaObjetivo.id, {
+      method: 'PUT',
+      body: JSON.stringify({
+        unidadCobro: $('zUnidad').value,
+        tarifa: Number($('zTarifa').value),
+        horaApertura: $('zApertura').value,
+        horaCierre: $('zCierre').value
+      })
+    });
+    $('dlgZona').close();
+    aviso('Zona configurada.');
+    await cargarZonas();
+  } catch (err) { mostrarError('errorZona', err.message); }
+});
+
+(async () => {
+  try { inmuebles = await api('/api/inmuebles?activo=true'); } catch (e) { aviso(e.message, true); }
+  await cargarZonas();
+  await cargar();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera(${admin} ? 'Vehículos' : 'Mis vehículos')}"></head>
+<body th:attr="data-admin=${admin}">
+<style>
+  .ancho { width: min(820px, 94vw); }
+  .acciones { white-space: normal; }
+  .acciones .btn { margin: 2px 0 2px 6px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1 th:text="${admin} ? 'Vehículos' : 'Mis vehículos'">Vehículos</h1>
+        <p>El vehículo pertenece al inmueble. Si cambia el responsable, el vehículo sigue asociado al inmueble.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Registrar vehículo</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+      <label id="lblEstado">Estado
+        <select id="fEstado">
+          <option value="true">Activos</option>
+          <option value="false">Dados de baja</option>
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Buscar placa
+        <input type="search" id="fPlaca" placeholder="ABC123">
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Placa</th><th>Tipo</th><th>Marca</th><th>Color</th>
+            <th>Inmueble</th><th>Responsable</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Registrar / modificar -->
+<dialog id="dlg">
+  <h2 id="dlgTitulo">Registrar vehículo</h2>
+  <form id="form">
+    <div class="campo">
+      <label for="inmueble">Inmueble</label>
+      <select id="inmueble" required></select>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="placa">Placa</label>
+        <input id="placa" required maxlength="8" style="text-transform:uppercase" placeholder="ABC123">
+      </div>
+      <div class="campo">
+        <label for="tipo">Tipo</label>
+        <select id="tipo" required>
+          <option value="">Seleccione...</option>
+          <option value="AUTOMOVIL">Automóvil</option>
+          <option value="CAMIONETA">Camioneta</option>
+          <option value="MOTOCICLETA">Motocicleta</option>
+          <option value="OTRO">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="marca">Marca</label>
+        <input id="marca" required maxlength="40">
+      </div>
+      <div class="campo">
+        <label for="color">Color</label>
+        <input id="color" required maxlength="30">
+      </div>
+    </div>
+    <div class="campo">
+      <label for="responsable">Responsable (opcional)</label>
+      <select id="responsable"><option value="">Sin responsable</option></select>
+    </div>
+    <p class="nota">El responsable es un propietario o arrendatario vinculado al inmueble.</p>
+    <div class="msg-error" id="error" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCerrar">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dar de baja -->
+<dialog id="dlgBaja">
+  <h2>Dar de baja el vehículo</h2>
+  <form id="formBaja">
+    <p class="nota" id="bajaDetalle"></p>
+    <div class="campo">
+      <label for="motivo">Motivo (obligatorio)</label>
+      <input id="motivo" required maxlength="200" placeholder="Vendido, retirado del conjunto...">
+    </div>
+    <div class="msg-error" id="errorBaja" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCerrarBaja">Cancelar</button>
+      <button type="submit" class="btn peligro">Dar de baja</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Historial de movimientos (RF-055, solo administrador) -->
+<dialog id="dlgHist" class="ancho">
+  <h2 id="histTitulo">Historial de movimientos</h2>
+  <section class="filtros">
+    <label>Desde <input type="date" id="hDesde"></label>
+    <label>Hasta <input type="date" id="hHasta"></label>
+  </section>
+  <div class="tabla-scroll">
+    <table class="tabla">
+      <thead>
+        <tr><th>Ingreso</th><th>Salida</th><th>Parqueadero</th><th>Registró ingreso</th><th>Registró salida</th></tr>
+      </thead>
+      <tbody id="filasHist"></tbody>
+    </table>
+  </div>
+  <div class="botones">
+    <button type="button" class="btn" id="btnCerrarHist">Cerrar</button>
+  </div>
+</dialog>
+
+<script>
+const ADMIN = document.body.dataset.admin === 'true';
+const TIPOS = { AUTOMOVIL: 'Automóvil', CAMIONETA: 'Camioneta', MOTOCICLETA: 'Motocicleta', OTRO: 'Otro' };
+let lista = [], inmuebles = [], editando = null, objetivo = null, vehiculoHist = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = s => s ? String(s).replace('T', ' ').substring(0, 16) : '—';
+const fecha = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+async function cargar() {
+  const url = '/api/vehiculos' + (ADMIN && $('fEstado').value !== '' ? '?activo=' + $('fEstado').value : '');
+  try {
+    lista = await api(url);
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const inm = $('fInmueble').value;
+  const placa = $('fPlaca').value.trim().toUpperCase().replace(/[\s-]/g, '');
+  const filas = lista.filter(v =>
+    (!inm || String(v.inmuebleId) === inm) && (!placa || v.placa.indexOf(placa) >= 0));
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay vehículos para mostrar.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = filas.map(v => `
+    <tr>
+      <td><strong>${esc(v.placa)}</strong></td>
+      <td>${esc(TIPOS[v.tipo] || v.tipo)}</td>
+      <td>${esc(v.marca)}</td>
+      <td>${esc(v.color)}</td>
+      <td>${esc(v.inmueble)}</td>
+      <td>${v.responsable ? esc(v.responsable) : '—'}</td>
+      <td>${v.activo ? '<span class="chip ok">Activo</span>'
+        : '<span class="chip off" title="' + esc(v.motivoBaja) + '">De baja</span>'}</td>
+      <td class="acciones">${ADMIN ? `
+        ${v.activo ? `<button class="btn" data-editar="${v.id}">Modificar</button>
+                      <button class="btn peligro" data-baja="${v.id}">Dar de baja</button>` : ''}
+        <button class="btn" data-hist="${v.id}">Historial</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+async function cargarResponsables(seleccionado) {
+  const id = $('inmueble').value;
+  $('responsable').innerHTML = '<option value="">Sin responsable</option>';
+  if (!id) return;
+  try {
+    const r = await api('/api/vehiculos/responsables?inmuebleId=' + id);
+    $('responsable').innerHTML = '<option value="">Sin responsable</option>' +
+      r.map(o => `<option value="${o.id}">${esc(o.nombre)}</option>`).join('');
+    if (seleccionado) $('responsable').value = String(seleccionado);
+  } catch (e) { aviso(e.message, true); }
+}
+
+function abrirNuevo() {
+  editando = null;
+  $('dlgTitulo').textContent = 'Registrar vehículo';
+  $('form').reset();
+  $('inmueble').disabled = false;
+  $('inmueble').innerHTML = '<option value="">Seleccione...</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+  if (inmuebles.length === 1) $('inmueble').value = String(inmuebles[0].id);
+  $('error').hidden = true;
+  cargarResponsables();
+  $('dlg').showModal();
+}
+
+/* ---------- Historial (RF-055) ---------- */
+async function cargarHistorial() {
+  const p = new URLSearchParams();
+  if ($('hDesde').value) p.set('desde', $('hDesde').value);
+  if ($('hHasta').value) p.set('hasta', $('hHasta').value);
+  try {
+    const h = await api('/api/accesos/vehiculos/' + vehiculoHist.id + '/historial?' + p.toString());
+    if (!h.length) {
+      $('filasHist').innerHTML = '<tr><td colspan="5" class="vacio">No hay movimientos en el periodo.</td></tr>';
+      return;
+    }
+    $('filasHist').innerHTML = h.map(m => `
+      <tr>
+        <td>${esc(fmt(m.ingresoEn))}</td>
+        <td>${m.salidaEn ? esc(fmt(m.salidaEn)) : '<span class="chip ok">Dentro</span>'}</td>
+        <td>${m.parqueadero ? esc(m.parqueadero) : '—'}</td>
+        <td>${esc(m.vigilanteIngreso)}</td>
+        <td>${esc(m.vigilanteSalida)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    $('filasHist').innerHTML = '<tr><td colspan="5" class="vacio">No se pudo cargar el historial.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+$('filas').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.editar) {
+    editando = lista.find(v => String(v.id) === b.dataset.editar);
+    $('dlgTitulo').textContent = 'Modificar vehículo';
+    $('inmueble').innerHTML = `<option value="${editando.inmuebleId}">${esc(editando.inmueble)}</option>`;
+    $('inmueble').disabled = true;
+    $('placa').value = editando.placa;
+    $('tipo').value = editando.tipo;
+    $('marca').value = editando.marca;
+    $('color').value = editando.color;
+    $('error').hidden = true;
+    await cargarResponsables(editando.responsableId);
+    $('dlg').showModal();
+  }
+  if (b.dataset.baja) {
+    objetivo = lista.find(v => String(v.id) === b.dataset.baja);
+    $('bajaDetalle').textContent = objetivo.placa + ' — ' + objetivo.inmueble;
+    $('motivo').value = '';
+    $('errorBaja').hidden = true;
+    $('dlgBaja').showModal();
+  }
+  if (b.dataset.hist) {
+    vehiculoHist = lista.find(v => String(v.id) === b.dataset.hist);
+    $('histTitulo').textContent = 'Historial de movimientos — ' + vehiculoHist.placa;
+    const fin = new Date(), ini = new Date();
+    ini.setDate(ini.getDate() - 30);
+    $('hHasta').value = fecha(fin);
+    $('hDesde').value = fecha(ini);
+    await cargarHistorial();
+    $('dlgHist').showModal();
+  }
+});
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const datos = {
+    placa: $('placa').value.trim(),
+    tipo: $('tipo').value,
+    marca: $('marca').value.trim(),
+    color: $('color').value.trim(),
+    responsableId: $('responsable').value ? Number($('responsable').value) : null
+  };
+  try {
+    if (editando) {
+      await api('/api/vehiculos/' + editando.id, { method: 'PUT', body: JSON.stringify(datos) });
+      aviso('Vehículo modificado.');
+    } else {
+      datos.inmuebleId = Number($('inmueble').value);
+      await api('/api/vehiculos', { method: 'POST', body: JSON.stringify(datos) });
+      aviso('Vehículo registrado.');
+    }
+    $('dlg').close();
+    await cargar();
+  } catch (err) {
+    $('error').textContent = err.message;
+    $('error').hidden = false;
+  }
+});
+
+$('formBaja').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/vehiculos/' + objetivo.id + '/baja?motivo=' + encodeURIComponent($('motivo').value.trim()),
+      { method: 'PATCH' });
+    $('dlgBaja').close();
+    aviso('Vehículo dado de baja.');
+    await cargar();
+  } catch (err) {
+    $('errorBaja').textContent = err.message;
+    $('errorBaja').hidden = false;
+  }
+});
+
+$('btnNuevo').addEventListener('click', abrirNuevo);
+$('btnCerrar').addEventListener('click', () => $('dlg').close());
+$('btnCerrarBaja').addEventListener('click', () => $('dlgBaja').close());
+$('btnCerrarHist').addEventListener('click', () => $('dlgHist').close());
+$('hDesde').addEventListener('change', cargarHistorial);
+$('hHasta').addEventListener('change', cargarHistorial);
+$('inmueble').addEventListener('change', () => { if (!editando) cargarResponsables(); });
+$('fInmueble').addEventListener('change', pintar);
+$('fPlaca').addEventListener('input', pintar);
+$('fEstado').addEventListener('change', cargar);
+
+(async () => {
+  if (!ADMIN) $('lblEstado').hidden = true;
+  try {
+    inmuebles = await api('/api/vehiculos/inmuebles');
+    $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+      inmuebles.map(i => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+  } catch (e) { aviso(e.message, true); }
+  cargar();
+})();
+</script>
+</body>
+</html>

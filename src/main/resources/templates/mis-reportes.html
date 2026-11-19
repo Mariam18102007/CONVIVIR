@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Reportes')}"></head>
+<body th:attr="data-vigilante=${vigilante}">
+<style>
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .chip.info { background: #e0ecff; color: #1d4ed8; }
+  .detalle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 0 0 14px; font-size: .92rem; }
+  .detalle-grid dt { color: var(--texto-suave); font-size: .78rem; }
+  .detalle-grid dd { margin: 0 0 6px; }
+  .texto-largo { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
+  .evidencia img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--borde); }
+  .bloque { border-top: 1px solid var(--borde); padding-top: 14px; margin-top: 14px; }
+  .campo textarea { resize: vertical; min-height: 90px; }
+  h3 { font-size: 1rem; margin: 14px 0 6px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Reportes</h1>
+        <p>Reporta daños y novedades y sigue su estado hasta que se cierren.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Nuevo reporte</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros" id="pestanas">
+      <button type="button" class="btn primario" data-vista="mios">Mis reportes</button>
+      <button type="button" class="btn" data-vista="inmueble">Reportes de mi inmueble</button>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Categoría</th><th>Descripción</th><th>Inmueble</th>
+            <th>Reportó</th><th>Fecha</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Nuevo reporte -->
+<dialog id="dlgNuevo">
+  <h2>Nuevo reporte</h2>
+  <form id="formNuevo">
+    <div class="campo">
+      <label for="categoria">Categoría</label>
+      <select id="categoria" required></select>
+    </div>
+    <div class="campo">
+      <label for="inmueble">Inmueble (opcional)</label>
+      <select id="inmueble"><option value="">Sin inmueble</option></select>
+    </div>
+    <div class="campo">
+      <label for="descripcion">Descripción</label>
+      <textarea id="descripcion" required maxlength="1000" rows="4" placeholder="Qué pasó, dónde y desde cuándo"></textarea>
+    </div>
+    <div class="campo">
+      <label for="imagen">Imagen de evidencia (opcional)</label>
+      <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp">
+    </div>
+    <p class="nota">JPG, PNG o WebP, de hasta 5 MB. No incluyas datos personales de otras personas.</p>
+    <div class="msg-error" id="errorNuevo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarNuevo">Cancelar</button>
+      <button type="submit" class="btn primario">Enviar reporte</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Detalle -->
+<dialog id="dlgDetalle" style="width: min(640px, 94vw);">
+  <h2 id="dTitulo">Reporte</h2>
+  <div id="dCuerpo"></div>
+  <div class="msg-error" id="errorDetalle" hidden></div>
+  <div class="botones">
+    <button type="button" class="btn" id="btnCerrarDetalle">Cerrar</button>
+  </div>
+</dialog>
+
+<script>
+const VIGILANTE = document.body.dataset.vigilante === 'true';
+const ESTADOS = { ABIERTO: 'Abierto', EN_PROCESO: 'En proceso', CERRADO: 'Cerrado' };
+const CHIP = { ABIERTO: 'warn', EN_PROCESO: 'info', CERRADO: 'ok' };
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/webp'];
+let vista = 'mios', lista = [], categorias = [], inmuebles = [], actual = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fecha = iso => iso ? new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const corto = (t, n) => { t = String(t == null ? '' : t); return t.length > n ? t.slice(0, n) + '…' : t; };
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+async function subirEvidencia(id, archivo) {
+  const datos = new FormData();
+  datos.append('archivo', archivo);
+  const r = await fetch('/api/reportes/' + id + '/evidencia', { method: 'POST', body: datos });
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || 'No se pudo adjuntar la imagen.');
+  }
+  return r.json();
+}
+
+function validarArchivo(f) {
+  if (!f) return null;
+  if (TIPOS_IMAGEN.indexOf(f.type) < 0) return 'Solo se aceptan imágenes JPG, PNG o WebP.';
+  if (f.size > 5 * 1024 * 1024) return 'La imagen no puede pesar más de 5 MB.';
+  return null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 7000);
+}
+
+function irA(nueva) {
+  vista = nueva;
+  document.querySelectorAll('#pestanas button').forEach(b =>
+    b.classList.toggle('primario', b.dataset.vista === vista));
+}
+
+async function cargar() {
+  const url = vista === 'mios' ? '/api/reportes/mis-reportes' : '/api/reportes/de-mi-inmueble';
+  try {
+    lista = await api(url);
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">' +
+      (vista === 'mios' ? 'Todavía no has creado reportes.' : 'No hay reportes de tu inmueble.') + '</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(r => `
+    <tr>
+      <td>${r.id}</td>
+      <td>${esc(r.categoria)}</td>
+      <td>${esc(corto(r.descripcion, 60))}</td>
+      <td>${r.inmueble ? esc(r.inmueble) : '—'}</td>
+      <td>${esc(r.creadoPor)}</td>
+      <td>${esc(fecha(r.creadoEn))}</td>
+      <td><span class="chip ${CHIP[r.estado]}">${esc(ESTADOS[r.estado])}</span></td>
+      <td class="acciones"><button class="btn" data-ver="${r.id}">Ver</button></td>
+    </tr>`).join('');
+}
+
+function renderDetalle() {
+  const r = actual;
+  $('dTitulo').textContent = 'Reporte N.° ' + r.id;
+  const puedeAdjuntar = vista === 'mios' && !r.tieneEvidencia && r.estado !== 'CERRADO';
+  $('dCuerpo').innerHTML = `
+    <p><span class="chip ${CHIP[r.estado]}">${esc(ESTADOS[r.estado])}</span></p>
+    <dl class="detalle-grid">
+      <div><dt>Categoría</dt><dd>${esc(r.categoria)}</dd></div>
+      <div><dt>Inmueble</dt><dd>${r.inmueble ? esc(r.inmueble) : '—'}</dd></div>
+      <div><dt>Reportó</dt><dd>${esc(r.creadoPor)}</dd></div>
+      <div><dt>Fecha</dt><dd>${esc(fecha(r.creadoEn))}</dd></div>
+    </dl>
+    <h3>Descripción</h3>
+    <p class="texto-largo">${esc(r.descripcion)}</p>
+    ${r.tieneEvidencia
+      ? '<h3>Evidencia</h3><div class="evidencia"><img src="/api/reportes/' + Number(r.id) + '/evidencia" alt="Evidencia del reporte"></div>'
+      : ''}
+    ${r.solucion
+      ? '<h3>Solución aplicada</h3><p class="texto-largo">' + esc(r.solucion) + '</p><p class="nota">Cerrado el ' + esc(fecha(r.cerradoEn)) + '</p>'
+      : ''}
+    ${puedeAdjuntar ? `
+      <div class="bloque">
+        <h3>Adjuntar imagen</h3>
+        <div class="campo"><input type="file" id="adjArchivo" accept="image/jpeg,image/png,image/webp"></div>
+        <p class="nota">JPG, PNG o WebP, de hasta 5 MB. Solo se puede adjuntar una imagen.</p>
+        <button type="button" class="btn primario" data-adjuntar="1">Adjuntar</button>
+      </div>` : ''}`;
+  $('errorDetalle').hidden = true;
+}
+
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-ver]');
+  if (!b) return;
+  actual = lista.find(r => String(r.id) === b.dataset.ver);
+  renderDetalle();
+  $('dlgDetalle').showModal();
+});
+
+$('dCuerpo').addEventListener('click', async e => {
+  if (!e.target.closest('button[data-adjuntar]')) return;
+  const archivo = $('adjArchivo').files[0];
+  const problema = archivo ? validarArchivo(archivo) : 'Seleccione una imagen.';
+  if (problema) { $('errorDetalle').textContent = problema; $('errorDetalle').hidden = false; return; }
+  try {
+    await subirEvidencia(actual.id, archivo);
+    aviso('Imagen adjuntada.');
+    const id = actual.id;
+    await cargar();
+    actual = lista.find(r => r.id === id) || actual;
+    renderDetalle();
+  } catch (err) {
+    $('errorDetalle').textContent = err.message;
+    $('errorDetalle').hidden = false;
+  }
+});
+
+function abrirNuevo() {
+  $('formNuevo').reset();
+  $('errorNuevo').hidden = true;
+  $('categoria').innerHTML = '<option value="">Seleccione...</option>' +
+    categorias.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+  $('inmueble').innerHTML = '<option value="">Sin inmueble</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+  if (!categorias.length) {
+    $('errorNuevo').textContent = 'Todavía no hay categorías de reporte. Pídele al administrador que las cree.';
+    $('errorNuevo').hidden = false;
+  }
+  $('dlgNuevo').showModal();
+}
+
+$('formNuevo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const archivo = $('imagen').files[0] || null;
+  const problema = validarArchivo(archivo);
+  if (problema) { $('errorNuevo').textContent = problema; $('errorNuevo').hidden = false; return; }
+
+  const body = {
+    categoriaId: Number($('categoria').value),
+    descripcion: $('descripcion').value.trim(),
+    inmuebleId: $('inmueble').value ? Number($('inmueble').value) : null
+  };
+  let creado;
+  try {
+    creado = await api('/api/reportes', { method: 'POST', body: JSON.stringify(body) });
+  } catch (err) {
+    $('errorNuevo').textContent = err.message;
+    $('errorNuevo').hidden = false;
+    return;
+  }
+  $('dlgNuevo').close();
+  if (archivo) {
+    try {
+      await subirEvidencia(creado.id, archivo);
+      aviso('Reporte creado con su imagen.');
+    } catch (err) {
+      aviso('Reporte creado, pero no se pudo adjuntar la imagen: ' + err.message +
+            ' Puedes adjuntarla desde el detalle.', true);
+    }
+  } else {
+    aviso('Reporte creado.');
+  }
+  irA('mios');
+  await cargar();
+});
+
+document.querySelectorAll('#pestanas button').forEach(b =>
+  b.addEventListener('click', () => { irA(b.dataset.vista); cargar(); }));
+$('btnNuevo').addEventListener('click', abrirNuevo);
+$('btnCancelarNuevo').addEventListener('click', () => $('dlgNuevo').close());
+$('btnCerrarDetalle').addEventListener('click', () => $('dlgDetalle').close());
+
+(async () => {
+  if (VIGILANTE) $('pestanas').hidden = true; // el vigilante solo ve los reportes que creó
+  try {
+    categorias = await api('/api/reportes/categorias');
+    inmuebles = await api('/api/reportes/inmuebles');
+  } catch (e) { aviso(e.message, true); }
+  await cargar();
+})();
+</script>
+</body>
+</html>

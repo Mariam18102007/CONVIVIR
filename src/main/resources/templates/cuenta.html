@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Mi cuenta')}"></head>
+<body>
+<style>
+  .bloque { max-width: 520px; margin-bottom: 16px; }
+  .bloque h2 { margin-bottom: 12px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Mi cuenta</h1>
+      <p>Tus datos de acceso y tu contraseña.</p>
+    </header>
+
+    <section class="tarjeta bloque">
+      <h2>Tus datos</h2>
+      <p>Usuario: <strong th:text="${usuario}">usuario</strong></p>
+      <p>Rol: <strong th:text="${rol}">Rol</strong></p>
+      <p class="nota" style="margin-top:10px">
+        Modificar nombre, teléfono y correo (RF-005): próximamente.
+      </p>
+    </section>
+
+    <section class="tarjeta bloque">
+      <h2>Cambiar contraseña</h2>
+      <div id="aviso" class="aviso" hidden></div>
+      <form id="form">
+        <div class="campo">
+          <label for="actual">Contraseña actual</label>
+          <input id="actual" type="password" required autocomplete="current-password">
+        </div>
+        <div class="campo">
+          <label for="nueva">Contraseña nueva (mínimo 8 caracteres)</label>
+          <input id="nueva" type="password" required minlength="8" autocomplete="new-password">
+        </div>
+        <div class="campo">
+          <label for="confirmar">Repite la contraseña nueva</label>
+          <input id="confirmar" type="password" required autocomplete="new-password">
+        </div>
+        <div class="botones">
+          <button type="submit" class="btn primario">Cambiar contraseña</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('aviso').hidden = true;
+  if ($('nueva').value.length < 8) { aviso('La contraseña nueva debe tener al menos 8 caracteres.', true); return; }
+  if ($('nueva').value !== $('confirmar').value) { aviso('Las contraseñas nuevas no coinciden.', true); return; }
+  try {
+    const r = await fetch('/api/cuenta/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actual: $('actual').value, nueva: $('nueva').value })
+    });
+    if (r.status === 401) { location.href = '/login'; return; }
+    if (!r.ok) {
+      let msg = '';
+      try { msg = (await r.json()).message || ''; } catch (x) { /* sin cuerpo */ }
+      aviso(msg || 'No se pudo cambiar la contraseña.', true);
+      return;
+    }
+    $('form').reset();
+    aviso('Contraseña actualizada. Úsala la próxima vez que inicies sesión.');
+  } catch (err) {
+    aviso('No se pudo conectar con el servidor.', true);
+  }
+});
+</script>
+</body>
+</html>

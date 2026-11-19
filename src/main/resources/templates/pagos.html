@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Pagos')}"></head>
+<body>
+<style>
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  .totales { margin: 0 0 10px; font-size: .9rem; color: var(--texto-suave); }
+  .ancho { width: min(760px, 94vw); }
+  .monto { width: 120px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Pagos</h1>
+        <p>Pagos recibidos por la pasarela y pagos presenciales.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Registrar pago presencial</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Desde <input type="date" id="fDesde"></label>
+      <label>Hasta <input type="date" id="fHasta"></label>
+      <label>Canal
+        <select id="fCanal">
+          <option value="">Todos</option>
+          <option value="PASARELA">Pasarela</option>
+          <option value="PRESENCIAL">Presencial</option>
+        </select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="CONFIRMADO">Confirmado</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="RECHAZADO">Rechazado</option>
+          <option value="ANULADO">Anulado</option>
+        </select>
+      </label>
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+    </section>
+
+    <p class="totales" id="totales"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Fecha</th><th>Inmueble</th><th>Canal</th><th>Medio</th>
+            <th>Pagador</th><th class="num">Valor</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Pago presencial -->
+<dialog id="dlgNuevo" class="ancho">
+  <h2>Registrar pago presencial</h2>
+  <form id="formNuevo">
+    <div class="campo">
+      <label for="pInmueble">Inmueble</label>
+      <select id="pInmueble" required></select>
+    </div>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Concepto</th><th>Periodo</th><th class="num">Saldo</th><th>Valor a pagar</th></tr>
+        </thead>
+        <tbody id="pObligaciones">
+          <tr><td colspan="4" class="vacio">Elige un inmueble.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="nota">Deja vacío lo que no se paga. Puedes escribir un valor menor al saldo para registrar un abono.</p>
+    <div class="dos">
+      <div class="campo">
+        <label for="pMedio">Medio de pago</label>
+        <select id="pMedio" required>
+          <option value="EFECTIVO">Efectivo</option>
+          <option value="TRANSFERENCIA">Transferencia</option>
+          <option value="CHEQUE">Cheque</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="pFecha">Fecha del pago</label>
+        <input id="pFecha" type="date" required>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="pPagador">Pagador</label>
+      <input id="pPagador" required maxlength="120" placeholder="Nombre de quien paga">
+    </div>
+    <p class="nota" id="pTotal"></p>
+    <div class="msg-error" id="errorNuevo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarNuevo">Cancelar</button>
+      <button type="submit" class="btn primario">Registrar pago</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Pago registrado -->
+<dialog id="dlgOk">
+  <h2>Pago registrado</h2>
+  <p id="okTexto"></p>
+  <div class="botones">
+    <a class="btn primario" id="okRecibo" href="#" target="_blank" rel="noopener">Abrir recibo de caja</a>
+    <button type="button" class="btn" id="btnCerrarOk">Cerrar</button>
+  </div>
+</dialog>
+
+<!-- Anular -->
+<dialog id="dlgAnular">
+  <h2>Anular pago</h2>
+  <form id="formAnular">
+    <p class="nota" id="anularDetalle"></p>
+    <div class="campo">
+      <label for="motivo">Motivo (obligatorio)</label>
+      <input id="motivo" required maxlength="200" placeholder="Registrado por error...">
+    </div>
+    <p class="nota">Al anular, el valor vuelve al saldo de las obligaciones.</p>
+    <div class="msg-error" id="errorAnular" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarAnular">Cancelar</button>
+      <button type="submit" class="btn peligro">Anular pago</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const CANALES = { PASARELA: 'Pasarela', PRESENCIAL: 'Presencial' };
+const MEDIOS = { EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia', CHEQUE: 'Cheque', PASARELA: 'Pasarela' };
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let lista = [], inmuebles = [], pendientes = [], objetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const hoy = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 7000);
+}
+
+function chipEstado(p) {
+  if (p.estado === 'CONFIRMADO') return '<span class="chip ok">Confirmado</span>';
+  if (p.estado === 'PENDIENTE') return '<span class="chip warn">Pendiente</span>';
+  if (p.estado === 'ANULADO') return '<span class="chip off" title="' + esc(p.motivoAnulacion) + '">Anulado</span>';
+  return '<span class="chip off">Rechazado</span>';
+}
+
+/* ---------- Listado ---------- */
+async function cargar() {
+  try {
+    lista = await api('/api/pagos');
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="9" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const desde = $('fDesde').value, hasta = $('fHasta').value, canal = $('fCanal').value,
+        est = $('fEstado').value, inm = $('fInmueble').value;
+  const filas = lista.filter(p =>
+    (!desde || p.fecha >= desde) && (!hasta || p.fecha <= hasta) &&
+    (!canal || p.canal === canal) && (!est || p.estado === est) &&
+    (!inm || String(p.inmuebleId) === inm));
+
+  const conf = filas.filter(p => p.estado === 'CONFIRMADO');
+  const porCanal = c => conf.filter(p => p.canal === c).reduce((s, p) => s + p.valor, 0);
+  $('totales').textContent = filas.length + ' pagos · Recaudado (confirmados): Pasarela ' +
+    dinero(porCanal('PASARELA')) + ' · Presencial ' + dinero(porCanal('PRESENCIAL')) +
+    ' · Total ' + dinero(porCanal('PASARELA') + porCanal('PRESENCIAL'));
+
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="9" class="vacio">No hay pagos con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = filas.map(p => `
+    <tr>
+      <td><strong>${esc(p.numero)}</strong></td>
+      <td>${esc(p.fecha)}</td>
+      <td>${esc(p.inmueble)}</td>
+      <td>${esc(CANALES[p.canal])}</td>
+      <td>${esc(MEDIOS[p.medio])}</td>
+      <td>${esc(p.pagador)}</td>
+      <td class="num">${dinero(p.valor)}</td>
+      <td>${chipEstado(p)}</td>
+      <td class="acciones">
+        ${p.estado === 'CONFIRMADO'
+          ? `<a class="btn" href="/api/pagos/${p.id}/comprobante" target="_blank" rel="noopener">${p.canal === 'PRESENCIAL' ? 'Recibo' : 'Comprobante'}</a>` : ''}
+        ${p.estado === 'CONFIRMADO' && p.canal === 'PRESENCIAL'
+          ? `<button class="btn peligro" data-anular="${p.id}">Anular</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+['fDesde', 'fHasta', 'fCanal', 'fEstado', 'fInmueble'].forEach(id => $(id).addEventListener('change', pintar));
+
+/* ---------- Anular ---------- */
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-anular]');
+  if (!b) return;
+  objetivo = lista.find(p => String(p.id) === b.dataset.anular);
+  $('anularDetalle').textContent = objetivo.numero + ' — ' + objetivo.inmueble + ' — ' + dinero(objetivo.valor);
+  $('motivo').value = '';
+  $('errorAnular').hidden = true;
+  $('dlgAnular').showModal();
+});
+
+$('formAnular').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/pagos/' + objetivo.id + '/anular?motivo=' + encodeURIComponent($('motivo').value.trim()),
+      { method: 'PATCH' });
+    $('dlgAnular').close();
+    aviso('Pago anulado. El valor volvió al saldo de las obligaciones.');
+    await cargar();
+  } catch (err) {
+    $('errorAnular').textContent = err.message;
+    $('errorAnular').hidden = false;
+  }
+});
+$('btnCancelarAnular').addEventListener('click', () => $('dlgAnular').close());
+
+/* ---------- Pago presencial ---------- */
+function totalIngresado() {
+  let t = 0;
+  document.querySelectorAll('#pObligaciones .monto').forEach(i => { t += Number(i.value) || 0; });
+  return t;
+}
+
+function actualizarTotal() {
+  $('pTotal').textContent = 'Total a registrar: ' + dinero(totalIngresado());
+}
+
+async function cargarPendientes() {
+  const id = $('pInmueble').value;
+  if (!id) {
+    $('pObligaciones').innerHTML = '<tr><td colspan="4" class="vacio">Elige un inmueble.</td></tr>';
+    pendientes = [];
+    actualizarTotal();
+    return;
+  }
+  try {
+    pendientes = await api('/api/obligaciones?inmuebleId=' + id + '&estado=PENDIENTE');
+    if (!pendientes.length) {
+      $('pObligaciones').innerHTML = '<tr><td colspan="4" class="vacio">Ese inmueble no tiene obligaciones pendientes.</td></tr>';
+    } else {
+      $('pObligaciones').innerHTML = pendientes.map(o => `
+        <tr>
+          <td>${esc(o.conceptoNombre)}${o.descripcion ? ' · ' + esc(o.descripcion) : ''}</td>
+          <td>${esc(o.periodo)}</td>
+          <td class="num">${dinero(o.saldo)}</td>
+          <td>
+            <input type="number" class="monto" min="1" max="${o.saldo}" step="1" data-ob="${o.id}">
+            <button type="button" class="btn" data-saldo="${o.id}">Saldo</button>
+          </td>
+        </tr>`).join('');
+    }
+    actualizarTotal();
+  } catch (e) {
+    $('errorNuevo').textContent = e.message;
+    $('errorNuevo').hidden = false;
+  }
+}
+
+$('pObligaciones').addEventListener('click', e => {
+  const b = e.target.closest('button[data-saldo]');
+  if (!b) return;
+  const o = pendientes.find(x => String(x.id) === b.dataset.saldo);
+  document.querySelector('#pObligaciones input[data-ob="' + o.id + '"]').value = o.saldo;
+  actualizarTotal();
+});
+$('pObligaciones').addEventListener('input', actualizarTotal);
+$('pInmueble').addEventListener('change', () => { $('errorNuevo').hidden = true; cargarPendientes(); });
+
+$('btnNuevo').addEventListener('click', () => {
+  $('formNuevo').reset();
+  $('errorNuevo').hidden = true;
+  $('pInmueble').innerHTML = '<option value="">Seleccione...</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('pFecha').value = hoy();
+  $('pFecha').max = hoy();
+  $('pObligaciones').innerHTML = '<tr><td colspan="4" class="vacio">Elige un inmueble.</td></tr>';
+  actualizarTotal();
+  $('dlgNuevo').showModal();
+});
+$('btnCancelarNuevo').addEventListener('click', () => $('dlgNuevo').close());
+
+$('formNuevo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const items = [];
+  document.querySelectorAll('#pObligaciones .monto').forEach(i => {
+    const v = Number(i.value);
+    if (v > 0) items.push({ obligacionId: Number(i.dataset.ob), valor: v });
+  });
+  if (!items.length) {
+    $('errorNuevo').textContent = 'Escribe el valor de al menos una obligación.';
+    $('errorNuevo').hidden = false;
+    return;
+  }
+  const body = {
+    inmuebleId: Number($('pInmueble').value),
+    medio: $('pMedio').value,
+    fecha: $('pFecha').value,
+    pagador: $('pPagador').value.trim(),
+    items: items
+  };
+  try {
+    const p = await api('/api/pagos/presencial', { method: 'POST', body: JSON.stringify(body) });
+    $('dlgNuevo').close();
+    $('okTexto').textContent = 'Se registró el pago ' + p.numero + ' por ' + dinero(p.valor) + '.';
+    $('okRecibo').href = '/api/pagos/' + p.id + '/comprobante';
+    $('dlgOk').showModal();
+    await cargar();
+  } catch (err) {
+    $('errorNuevo').textContent = err.message;
+    $('errorNuevo').hidden = false;
+  }
+});
+$('btnCerrarOk').addEventListener('click', () => $('dlgOk').close());
+
+(async () => {
+  try {
+    inmuebles = await api('/api/inmuebles?activo=true');
+    $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+      inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  } catch (e) { aviso(e.message, true); }
+  await cargar();
+})();
+</script>
+</body>
+</html>

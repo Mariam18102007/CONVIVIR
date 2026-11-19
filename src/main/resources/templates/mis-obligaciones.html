@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Obligaciones y pagos')}"></head>
+<body>
+<style>
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  .resumen { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin: 0 0 20px; }
+  .resumen .tarjeta h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .saldo { font-size: 1.5rem; font-weight: 700; margin: 6px 0 2px; }
+  .monto { width: 120px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; }
+  .barra { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 24px; }
+  h2.sub { font-size: 1.1rem; margin: 28px 0 10px; }
+  .resultado { border-radius: 10px; padding: 14px 16px; margin: 0 0 18px; }
+  .resultado.ok { background: #e4f6ea; color: #14532d; }
+  .resultado.mal { background: #fde8e8; color: #7f1d1d; }
+  .resultado.espera { background: #fff4d6; color: #8a5a00; }
+  .resultado a, .resultado button { margin-left: 8px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Obligaciones y pagos</h1>
+      <p>Consulta lo que debe tu inmueble, paga o abona, y revisa tu historial de pagos.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+    <div id="resultadoPago" class="resultado" hidden></div>
+
+    <div class="resumen" id="resumen"></div>
+
+    <section class="filtros">
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="PENDIENTE">Pendientes</option>
+          <option value="PAGADA">Pagadas</option>
+          <option value="">Todas</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th></th><th>Inmueble</th><th>Concepto</th><th>Periodo</th><th>Detalle</th>
+            <th class="num">Valor</th><th class="num">Saldo</th><th>Vence</th><th>Estado</th><th>A pagar</th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+
+    <div class="barra">
+      <strong id="totalSel">Seleccionado: $ 0</strong>
+      <button class="btn primario" id="btnPagar" type="button" disabled>Pagar con la pasarela</button>
+      <span class="nota" style="margin:0">Marca las obligaciones de un mismo inmueble. Puedes escribir un valor menor al saldo para abonar.</span>
+    </div>
+    <p class="nota" id="notaArrendatario" hidden>Como arrendatario ves y pagas solo la cuota de administración.
+      Las multas y cuotas extraordinarias son del propietario.</p>
+
+    <h2 class="sub">Historial de pagos</h2>
+    <section class="filtros">
+      <label>Desde <input type="date" id="hDesde"></label>
+      <label>Hasta <input type="date" id="hHasta"></label>
+    </section>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Fecha</th><th>Inmueble</th><th>Detalle</th>
+            <th class="num">Valor</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filasPagos"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let lista = [], resumen = [], pagos = [], seleccion = {}, selInmueble = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = 'aviso error';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+/* ---------- Resumen ---------- */
+function pintarResumen() {
+  if (!resumen.length) {
+    $('resumen').innerHTML = '<div class="tarjeta"><p class="nota">No tienes inmuebles vinculados como propietario o arrendatario.</p></div>';
+    return;
+  }
+  $('resumen').innerHTML = resumen.map(r => `
+    <div class="tarjeta">
+      <h2>${esc(r.inmueble)}</h2>
+      <span class="chip">${esc(r.vinculo)}</span>
+      <div class="saldo">${dinero(r.saldoPendiente)}</div>
+      <p class="nota" style="margin:0">Saldo pendiente · ${r.pendientes} obligaciones
+        ${r.saldoVencido > 0 ? '<br><strong>Vencido: ' + dinero(r.saldoVencido) + '</strong>' : ''}</p>
+    </div>`).join('');
+  $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+    resumen.map(r => `<option value="${r.inmuebleId}">${esc(r.inmueble)}</option>`).join('');
+  $('notaArrendatario').hidden = !resumen.some(r => r.vinculo === 'Arrendatario');
+}
+
+/* ---------- Obligaciones con selección ---------- */
+function chipEstado(o) {
+  if (o.estado === 'PAGADA') return '<span class="chip ok">Pagada</span>';
+  if (o.vencida) return '<span class="chip off">Vencida · ' + o.diasMora + ' d</span>';
+  if (o.saldo < o.valor) return '<span class="chip warn">Abonada</span>';
+  return '<span class="chip warn">Pendiente</span>';
+}
+
+function pintar() {
+  const inm = $('fInmueble').value, est = $('fEstado').value;
+  const filas = lista.filter(o => (!inm || String(o.inmuebleId) === inm) && (!est || o.estado === est));
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="10" class="vacio">No hay obligaciones para mostrar.</td></tr>';
+    actualizarSeleccion();
+    return;
+  }
+  $('filas').innerHTML = filas.map(o => {
+    const pendiente = o.estado === 'PENDIENTE' && o.saldo > 0;
+    const sel = seleccion[o.id] != null;
+    return `
+    <tr>
+      <td>${pendiente ? `<input type="checkbox" data-sel="${o.id}" ${sel ? 'checked' : ''}>` : ''}</td>
+      <td><strong>${esc(o.inmueble)}</strong></td>
+      <td>${esc(o.conceptoNombre)}</td>
+      <td>${esc(o.periodo)}</td>
+      <td>${o.descripcion ? esc(o.descripcion) : '—'}</td>
+      <td class="num">${dinero(o.valor)}</td>
+      <td class="num">${dinero(o.saldo)}</td>
+      <td>${esc(o.fechaVencimiento)}</td>
+      <td>${chipEstado(o)}</td>
+      <td>${pendiente
+        ? `<input type="number" class="monto" min="1" max="${o.saldo}" step="1" data-monto="${o.id}"
+             value="${sel ? seleccion[o.id] : ''}" ${sel ? '' : 'disabled'}>` : ''}</td>
+    </tr>`;
+  }).join('');
+  actualizarSeleccion();
+}
+
+function actualizarSeleccion() {
+  const ids = Object.keys(seleccion);
+  const total = ids.reduce((s, id) => s + (Number(seleccion[id]) || 0), 0);
+  $('totalSel').textContent = 'Seleccionado: ' + dinero(total);
+  $('btnPagar').disabled = !ids.length || total <= 0;
+}
+
+$('filas').addEventListener('change', e => {
+  const cb = e.target.closest('input[data-sel]');
+  if (cb) {
+    const o = lista.find(x => String(x.id) === cb.dataset.sel);
+    if (cb.checked) {
+      if (selInmueble && selInmueble !== o.inmuebleId) {
+        cb.checked = false;
+        aviso('Solo puedes pagar a la vez obligaciones de un mismo inmueble.');
+        return;
+      }
+      selInmueble = o.inmuebleId;
+      seleccion[o.id] = o.saldo;
+    } else {
+      delete seleccion[o.id];
+      if (!Object.keys(seleccion).length) selInmueble = null;
+    }
+    pintar();
+    return;
+  }
+  const mt = e.target.closest('input[data-monto]');
+  if (mt) {
+    const o = lista.find(x => String(x.id) === mt.dataset.monto);
+    let v = Math.round(Number(mt.value) || 0);
+    if (v < 1) v = 1;
+    if (v > o.saldo) v = o.saldo;
+    mt.value = v;
+    seleccion[o.id] = v;
+    actualizarSeleccion();
+  }
+});
+
+$('filas').addEventListener('input', e => {
+  const mt = e.target.closest('input[data-monto]');
+  if (!mt) return;
+  const v = Math.round(Number(mt.value) || 0);
+  if (v > 0) seleccion[mt.dataset.monto] = v;
+  actualizarSeleccion();
+});
+
+$('fInmueble').addEventListener('change', pintar);
+$('fEstado').addEventListener('change', pintar);
+
+$('btnPagar').addEventListener('click', async () => {
+  const items = Object.keys(seleccion).map(id => ({ obligacionId: Number(id), valor: Number(seleccion[id]) }));
+  if (!items.length) return;
+  $('btnPagar').disabled = true;
+  try {
+    const r = await api('/api/pagos/pasarela', {
+      method: 'POST',
+      body: JSON.stringify({ inmuebleId: selInmueble, items: items })
+    });
+    location.href = r.url;
+  } catch (e) {
+    aviso(e.message);
+    actualizarSeleccion();
+  }
+});
+
+/* ---------- Historial de pagos ---------- */
+const ESTADOS_PAGO = { CONFIRMADO: ['ok', 'Confirmado'], PENDIENTE: ['warn', 'Pendiente'],
+                       RECHAZADO: ['off', 'Rechazado'], ANULADO: ['off', 'Anulado'] };
+
+async function cargarPagos() {
+  const p = new URLSearchParams();
+  if ($('hDesde').value) p.set('desde', $('hDesde').value);
+  if ($('hHasta').value) p.set('hasta', $('hHasta').value);
+  try {
+    pagos = await api('/api/pagos/mios?' + p.toString());
+    if (!pagos.length) {
+      $('filasPagos').innerHTML = '<tr><td colspan="7" class="vacio">No hay pagos en ese periodo.</td></tr>';
+      return;
+    }
+    $('filasPagos').innerHTML = pagos.map(x => {
+      const e = ESTADOS_PAGO[x.estado] || ['', x.estado];
+      return `
+      <tr>
+        <td><strong>${esc(x.numero)}</strong></td>
+        <td>${esc(x.fecha)}</td>
+        <td>${esc(x.inmueble)}</td>
+        <td>${x.detalles.map(d => esc(d.concepto) + ' ' + esc(d.periodo)).join(', ')}</td>
+        <td class="num">${dinero(x.valor)}</td>
+        <td><span class="chip ${e[0]}">${e[1]}</span></td>
+        <td class="acciones">
+          ${x.estado === 'CONFIRMADO'
+            ? `<a class="btn" href="/api/pagos/${x.id}/comprobante" target="_blank" rel="noopener">Comprobante</a>` : ''}
+          ${x.estado === 'PENDIENTE'
+            ? `<button class="btn" data-verificar="${x.id}">Verificar</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    $('filasPagos').innerHTML = '<tr><td colspan="7" class="vacio">No se pudo cargar el historial.</td></tr>';
+    aviso(e.message);
+  }
+}
+
+$('hDesde').addEventListener('change', cargarPagos);
+$('hHasta').addEventListener('change', cargarPagos);
+
+$('filasPagos').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-verificar]');
+  if (!b) return;
+  await verificar(b.dataset.verificar);
+});
+
+/* ---------- Resultado de la transacción (RF-076) ---------- */
+async function verificar(id) {
+  try {
+    const p = await api('/api/pagos/' + id + '/verificar', { method: 'POST' });
+    const el = $('resultadoPago');
+    if (p.estado === 'CONFIRMADO') {
+      el.className = 'resultado ok';
+      el.innerHTML = '<strong>Pago aprobado.</strong> ' + esc(p.numero) + ' por ' + dinero(p.valor) +
+        '. <a class="btn" href="/api/pagos/' + p.id + '/comprobante" target="_blank" rel="noopener">Ver comprobante</a>';
+    } else if (p.estado === 'RECHAZADO') {
+      el.className = 'resultado mal';
+      el.innerHTML = '<strong>Pago rechazado.</strong> No se aplicó ningún valor a tus obligaciones.';
+    } else {
+      el.className = 'resultado espera';
+      el.innerHTML = '<strong>El pago sigue pendiente</strong> en la pasarela. ' +
+        '<button class="btn" id="btnReintentar" type="button">Verificar de nuevo</button>';
+      setTimeout(() => {
+        const r = $('btnReintentar');
+        if (r) r.addEventListener('click', () => verificar(id));
+      }, 0);
+    }
+    el.hidden = false;
+    await recargar();
+  } catch (e) { aviso(e.message); }
+}
+
+async function recargar() {
+  resumen = await api('/api/obligaciones/mias/resumen');
+  lista = await api('/api/obligaciones/mias');
+  const vigentes = new Set(lista.filter(o => o.estado === 'PENDIENTE').map(o => String(o.id)));
+  Object.keys(seleccion).forEach(id => { if (!vigentes.has(id)) delete seleccion[id]; });
+  if (!Object.keys(seleccion).length) selInmueble = null;
+  const f = $('fInmueble').value;
+  pintarResumen();
+  $('fInmueble').value = f;
+  pintar();
+  await cargarPagos();
+}
+
+(async () => {
+  try {
+    await recargar();
+    const id = new URLSearchParams(location.search).get('pago');
+    if (id) {
+      history.replaceState(null, '', '/mis-obligaciones');
+      await verificar(id);
+    }
+  } catch (e) {
+    aviso(e.message);
+    $('filas').innerHTML = '<tr><td colspan="10" class="vacio">No se pudo cargar la información.</td></tr>';
+  }
+})();
+</script>
+</body>
+</html>

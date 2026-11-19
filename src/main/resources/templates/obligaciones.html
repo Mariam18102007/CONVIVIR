@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Obligaciones')}"></head>
+<body>
+<style>
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  .totales { margin: 0 0 10px; font-size: .9rem; color: var(--texto-suave); }
+  .grupo { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 10px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Obligaciones</h1>
+        <p>Cuotas de administración por periodo y cobros individuales por inmueble.</p>
+      </div>
+      <button class="btn primario" id="btnNueva" type="button">+ Obligación individual</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="tarjeta" style="margin-bottom:18px">
+      <h2>Cuota de administración del periodo</h2>
+      <div class="dos">
+        <div class="campo">
+          <label for="periodo">Periodo</label>
+          <input id="periodo" type="month">
+        </div>
+        <div class="campo">
+          <label for="valorBase">Valor base (pesos)</label>
+          <input id="valorBase" type="number" min="1" step="1" placeholder="1000000">
+        </div>
+      </div>
+      <div class="dos">
+        <div class="campo">
+          <label for="vencimiento">Fecha de vencimiento</label>
+          <input id="vencimiento" type="date">
+        </div>
+        <div class="campo">
+          <label>Estado del periodo</label>
+          <p class="nota" id="estadoPeriodo" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+      <p class="nota">Cuota de cada inmueble = valor base × coeficiente ÷ 100, redondeada al peso.
+        Solo reciben cuota los inmuebles activos cuyo tipo tiene "genera cuota".</p>
+      <div class="msg-error" id="errorPeriodo" hidden></div>
+      <div class="grupo">
+        <button class="btn" id="btnGuardar" type="button">Guardar configuración</button>
+        <button class="btn primario" id="btnGenerar" type="button">Generar obligaciones del periodo</button>
+      </div>
+    </section>
+
+    <section class="filtros">
+      <label>Periodo
+        <select id="fPeriodo"><option value="">Todos</option></select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="PAGADA">Pagada</option>
+          <option value="ANULADA">Anulada</option>
+        </select>
+      </label>
+      <label>Concepto
+        <select id="fConcepto">
+          <option value="">Todos</option>
+          <option value="CUOTA_ADMINISTRACION">Cuota de administración</option>
+          <option value="CUOTA_EXTRAORDINARIA">Cuota extraordinaria</option>
+          <option value="MULTA">Multa</option>
+          <option value="INTERES_MORA">Interés de mora</option>
+          <option value="ALQUILER_ZONA">Alquiler de zona común</option>
+        </select>
+      </label>
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+    </section>
+
+    <p class="totales" id="totales"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Inmueble</th><th>Concepto</th><th>Periodo</th><th>Detalle</th>
+            <th class="num">Valor</th><th class="num">Saldo</th><th>Vence</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Obligación individual -->
+<dialog id="dlgNueva">
+  <h2>Obligación individual</h2>
+  <form id="formNueva">
+    <div class="campo">
+      <label for="nInmueble">Inmueble</label>
+      <select id="nInmueble" required></select>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="nConcepto">Concepto</label>
+        <select id="nConcepto" required>
+          <option value="MULTA">Multa</option>
+          <option value="CUOTA_EXTRAORDINARIA">Cuota extraordinaria</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="nValor">Valor (pesos)</label>
+        <input id="nValor" type="number" min="1" step="1" required>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="nVence">Fecha de vencimiento</label>
+      <input id="nVence" type="date" required>
+    </div>
+    <div class="campo">
+      <label for="nDetalle">Detalle</label>
+      <input id="nDetalle" required maxlength="200" placeholder="Motivo del cobro">
+    </div>
+    <p class="nota">Los intereses de mora y el alquiler de zonas comunes no se registran a mano: el sistema los genera.</p>
+    <div class="msg-error" id="errorNueva" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarNueva">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Anular -->
+<dialog id="dlgAnular">
+  <h2>Anular obligación</h2>
+  <form id="formAnular">
+    <p class="nota" id="anularDetalle"></p>
+    <div class="campo">
+      <label for="motivo">Motivo (obligatorio)</label>
+      <input id="motivo" required maxlength="200" placeholder="Generada por error...">
+    </div>
+    <div class="msg-error" id="errorAnular" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarAnular">Cancelar</button>
+      <button type="submit" class="btn peligro">Anular</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const ESTADOS = { PENDIENTE: 'Pendiente', PAGADA: 'Pagada', ANULADA: 'Anulada' };
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let lista = [], periodos = [], inmuebles = [], objetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const hoy = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const mesActual = () => hoy().substring(0, 7);
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+/* ---------- Periodo ---------- */
+function ultimoDia(periodo) {
+  const a = Number(periodo.substring(0, 4)), m = Number(periodo.substring(5, 7));
+  const d = new Date(a, m, 0);
+  return periodo + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function mostrarPeriodo() {
+  const p = $('periodo').value;
+  $('errorPeriodo').hidden = true;
+  const conf = periodos.find(x => x.periodo === p);
+  if (conf) {
+    $('valorBase').value = conf.valorBase;
+    $('vencimiento').value = conf.fechaVencimiento;
+    $('estadoPeriodo').textContent = conf.generadoEn
+      ? 'Generado. La configuración ya no se puede cambiar.'
+      : 'Configurado, todavía sin generar.';
+  } else {
+    $('valorBase').value = '';
+    $('vencimiento').value = p ? ultimoDia(p) : '';
+    $('estadoPeriodo').textContent = 'Sin configurar.';
+  }
+  const bloqueado = !!(conf && conf.generadoEn);
+  $('valorBase').disabled = bloqueado;
+  $('vencimiento').disabled = bloqueado;
+  $('btnGuardar').disabled = bloqueado || !p;
+  $('btnGenerar').disabled = !conf;
+}
+
+async function cargarPeriodos() {
+  periodos = await api('/api/obligaciones/periodos');
+  mostrarPeriodo();
+}
+
+$('periodo').addEventListener('change', mostrarPeriodo);
+
+$('btnGuardar').addEventListener('click', async () => {
+  $('errorPeriodo').hidden = true;
+  const p = $('periodo').value;
+  try {
+    await api('/api/obligaciones/periodos/' + p, {
+      method: 'PUT',
+      body: JSON.stringify({
+        valorBase: $('valorBase').value ? Number($('valorBase').value) : null,
+        fechaVencimiento: $('vencimiento').value || null
+      })
+    });
+    await cargarPeriodos();
+    aviso('Configuración guardada.');
+  } catch (e) {
+    $('errorPeriodo').textContent = e.message;
+    $('errorPeriodo').hidden = false;
+  }
+});
+
+$('btnGenerar').addEventListener('click', async () => {
+  const p = $('periodo').value;
+  if (!confirm('¿Generar las cuotas del periodo ' + p + ' para todos los inmuebles que corresponden?')) return;
+  try {
+    const r = await api('/api/obligaciones/periodos/' + p + '/generar', { method: 'POST' });
+    aviso('Se crearon ' + r.creadas + ' obligaciones. Ya existían: ' + r.yaExistian +
+      '. Omitidas por no tener coeficiente: ' + r.omitidas + '.', r.creadas === 0 && r.yaExistian === 0);
+    await cargarPeriodos();
+    await cargar();
+  } catch (e) {
+    $('errorPeriodo').textContent = e.message;
+    $('errorPeriodo').hidden = false;
+  }
+});
+
+/* ---------- Listado ---------- */
+function pintarFiltros() {
+  const per = $('fPeriodo').value, inm = $('fInmueble').value;
+  const delListado = lista.map(o => o.periodo);
+  const todos = Array.from(new Set(periodos.map(x => x.periodo).concat(delListado))).sort().reverse();
+  $('fPeriodo').innerHTML = '<option value="">Todos</option>' +
+    todos.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  $('fPeriodo').value = per;
+  $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('fInmueble').value = inm;
+}
+
+async function cargar() {
+  try {
+    lista = await api('/api/obligaciones');
+    pintarFiltros();
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="10" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function chipEstado(o) {
+  if (o.estado === 'PAGADA') return '<span class="chip ok">Pagada</span>';
+  if (o.estado === 'ANULADA') return '<span class="chip off" title="' + esc(o.motivoAnulacion) + '">Anulada</span>';
+  if (o.vencida) return '<span class="chip off">Vencida · ' + o.diasMora + ' d</span>';
+  if (o.saldo < o.valor) return '<span class="chip warn">Abonada</span>';
+  return '<span class="chip warn">Pendiente</span>';
+}
+
+function pintar() {
+  const per = $('fPeriodo').value, est = $('fEstado').value,
+        con = $('fConcepto').value, inm = $('fInmueble').value;
+  const filas = lista.filter(o =>
+    (!per || o.periodo === per) && (!est || o.estado === est) &&
+    (!con || o.concepto === con) && (!inm || String(o.inmuebleId) === inm));
+
+  const vigentes = filas.filter(o => o.estado !== 'ANULADA');
+  const total = vigentes.reduce((s, o) => s + o.valor, 0);
+  const saldo = vigentes.reduce((s, o) => s + o.saldo, 0);
+  $('totales').textContent = filas.length + ' obligaciones · Valor: ' + dinero(total) +
+    ' · Saldo pendiente: ' + dinero(saldo) + ' (sin contar anuladas)';
+
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="10" class="vacio">No hay obligaciones con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = filas.map(o => `
+    <tr>
+      <td>${o.id}</td>
+      <td><strong>${esc(o.inmueble)}</strong></td>
+      <td>${esc(o.conceptoNombre)}</td>
+      <td>${esc(o.periodo)}</td>
+      <td>${o.descripcion ? esc(o.descripcion) : '—'}</td>
+      <td class="num">${dinero(o.valor)}</td>
+      <td class="num">${dinero(o.saldo)}</td>
+      <td>${esc(o.fechaVencimiento)}</td>
+      <td>${chipEstado(o)}</td>
+      <td class="acciones">${o.estado === 'PENDIENTE' && o.saldo === o.valor
+        ? `<button class="btn peligro" data-anular="${o.id}">Anular</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+['fPeriodo', 'fEstado', 'fConcepto', 'fInmueble'].forEach(id => $(id).addEventListener('change', pintar));
+
+/* ---------- Anular ---------- */
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-anular]');
+  if (!b) return;
+  objetivo = lista.find(o => String(o.id) === b.dataset.anular);
+  $('anularDetalle').textContent = objetivo.conceptoNombre + ' — ' + objetivo.inmueble + ' — ' + dinero(objetivo.valor);
+  $('motivo').value = '';
+  $('errorAnular').hidden = true;
+  $('dlgAnular').showModal();
+});
+
+$('formAnular').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/obligaciones/' + objetivo.id + '/anular?motivo=' + encodeURIComponent($('motivo').value.trim()),
+      { method: 'PATCH' });
+    $('dlgAnular').close();
+    aviso('Obligación anulada.');
+    await cargar();
+  } catch (err) {
+    $('errorAnular').textContent = err.message;
+    $('errorAnular').hidden = false;
+  }
+});
+$('btnCancelarAnular').addEventListener('click', () => $('dlgAnular').close());
+
+/* ---------- Obligación individual ---------- */
+$('btnNueva').addEventListener('click', () => {
+  $('formNueva').reset();
+  $('errorNueva').hidden = true;
+  $('nInmueble').innerHTML = '<option value="">Seleccione...</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('nVence').min = hoy();
+  $('dlgNueva').showModal();
+});
+$('btnCancelarNueva').addEventListener('click', () => $('dlgNueva').close());
+
+$('formNueva').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    inmuebleId: Number($('nInmueble').value),
+    concepto: $('nConcepto').value,
+    valor: Number($('nValor').value),
+    fechaVencimiento: $('nVence').value,
+    descripcion: $('nDetalle').value.trim()
+  };
+  try {
+    await api('/api/obligaciones', { method: 'POST', body: JSON.stringify(body) });
+    $('dlgNueva').close();
+    aviso('Obligación registrada.');
+    await cargar();
+  } catch (err) {
+    $('errorNueva').textContent = err.message;
+    $('errorNueva').hidden = false;
+  }
+});
+
+(async () => {
+  $('periodo').value = mesActual();
+  try {
+    inmuebles = await api('/api/inmuebles?activo=true');
+    await cargarPeriodos();
+  } catch (e) { aviso(e.message, true); }
+  await cargar();
+})();
+</script>
+</body>
+</html>

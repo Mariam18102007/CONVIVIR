@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Auditoría')}"></head>
+<body>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Auditoría</h1>
+        <p>Registro de las operaciones hechas en la plataforma. Solo consulta: no se puede editar ni borrar.</p>
+      </div>
+      <a class="btn primario" id="btnExportar" href="#">Exportar CSV</a>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Desde
+        <input type="date" id="fDesde">
+      </label>
+      <label>Hasta
+        <input type="date" id="fHasta">
+      </label>
+      <label>Usuario (correo)
+        <input type="search" id="fUsuario" placeholder="admin@ph.local">
+      </label>
+      <label>Acción
+        <select id="fAccion">
+          <option value="">Todas</option>
+        </select>
+      </label>
+      <label>Entidad
+        <select id="fEntidad">
+          <option value="">Todas</option>
+        </select>
+      </label>
+    </section>
+
+    <p class="nota" id="resumen"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Fecha y hora</th><th>Usuario</th><th>Acción</th>
+            <th>Entidad</th><th>ID</th><th>Detalle</th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+let registros = [], temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fecha = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (r.status === 403) throw new Error('No tienes permiso para ver la auditoría.');
+  if (!r.ok) throw new Error('No se pudo cargar (error ' + r.status + ').');
+  return r.json();
+}
+
+function aviso(msg) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = 'aviso error';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+function parametros() {
+  const p = new URLSearchParams();
+  if ($('fDesde').value) p.set('desde', $('fDesde').value);
+  if ($('fHasta').value) p.set('hasta', $('fHasta').value);
+  return p;
+}
+
+function actualizarEnlace() {
+  const q = parametros().toString();
+  $('btnExportar').href = '/api/auditoria/exportar' + (q ? '?' + q : '');
+}
+
+// Llena los selectores con los valores que existen en el periodo.
+function llenarOpciones(selector, valores) {
+  const actual = selector.value;
+  const lista = Array.from(new Set(valores)).sort();
+  selector.innerHTML = '<option value="">Todas</option>' +
+    lista.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (lista.includes(actual)) selector.value = actual;
+}
+
+async function cargar() {
+  const p = parametros();
+  if ($('fUsuario').value.trim()) p.set('usuario', $('fUsuario').value.trim());
+  if ($('fAccion').value) p.set('accion', $('fAccion').value);
+  actualizarEnlace();
+  try {
+    registros = await api('/api/auditoria?' + p.toString());
+    // Las opciones de acción se arman con lo que devuelve el periodo.
+    if (!$('fAccion').value) llenarOpciones($('fAccion'), registros.map(r => r.accion));
+    llenarOpciones($('fEntidad'), registros.map(r => r.entidad));
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="6" class="vacio">No se pudo cargar la auditoría.</td></tr>';
+    aviso(e.message);
+  }
+}
+
+function pintar() {
+  const ent = $('fEntidad').value;
+  const visibles = ent ? registros.filter(r => r.entidad === ent) : registros;
+  $('resumen').textContent = visibles.length + ' registro(s) en el periodo seleccionado.';
+  if (!visibles.length) {
+    $('filas').innerHTML = '<tr><td colspan="6" class="vacio">No hay registros para estos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = visibles.map(r => `
+    <tr>
+      <td>${esc(String(r.fechaHora).replace('T', ' ').substring(0, 19))}</td>
+      <td>${esc(r.usuario)}</td>
+      <td><span class="chip">${esc(r.accion)}</span></td>
+      <td>${esc(r.entidad)}</td>
+      <td>${r.entidadId == null ? '—' : esc(r.entidadId)}</td>
+      <td>${esc(r.detalle)}</td>
+    </tr>`).join('');
+}
+
+['fDesde', 'fHasta', 'fAccion'].forEach(id => $(id).addEventListener('change', cargar));
+$('fUsuario').addEventListener('input', () => {
+  clearTimeout($('fUsuario')._t);
+  $('fUsuario')._t = setTimeout(cargar, 350);
+});
+$('fEntidad').addEventListener('change', pintar);
+
+// Por defecto: los últimos 30 días.
+const fin = new Date();
+const ini = new Date();
+ini.setDate(ini.getDate() - 30);
+$('fHasta').value = fecha(fin);
+$('fDesde').value = fecha(ini);
+cargar();
+</script>
+</body>
+</html>

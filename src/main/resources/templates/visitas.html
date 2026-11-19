@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Visitas')}"></head>
+<body>
+<style>
+  .check { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: .9rem; }
+  .check input { width: auto; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Visitas</h1>
+        <p>Anuncia a quien viene a visitarte para que el vigilante lo deje pasar.</p>
+      </div>
+      <button class="btn primario" id="btnNueva" type="button">+ Registrar visita</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <p class="nota" id="infoParq" hidden></p>
+
+    <section class="filtros">
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="VIGENTE">Vigente</option>
+          <option value="UTILIZADA">Utilizada</option>
+          <option value="CANCELADA">Cancelada</option>
+          <option value="VENCIDA">Vencida</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Visitante</th><th>Documento</th><th>Inmueble</th><th>Desde</th>
+            <th>Hasta</th><th>Parqueadero</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <h2>Registrar visita</h2>
+  <form id="form">
+    <div class="campo">
+      <label for="nombre">Nombre del visitante</label>
+      <input id="nombre" required maxlength="120">
+    </div>
+    <div class="campo">
+      <label for="documento">Número de documento</label>
+      <input id="documento" required maxlength="30">
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="inicio">Fecha de la visita</label>
+        <input id="inicio" type="date" required>
+      </div>
+      <div class="campo">
+        <label for="fin">Hasta (opcional)</label>
+        <input id="fin" type="date">
+      </div>
+    </div>
+    <label class="check"><input id="parq" type="checkbox"> El visitante usará parqueadero de visitantes</label>
+    <p class="nota" id="notaParq"></p>
+    <p class="nota">Antes de registrarlo, confirma que el visitante está de acuerdo con que se registren sus datos para el control de acceso.</p>
+    <div class="msg-error" id="error" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCerrar">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+let lista = [], textoParq = '', temporizador = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hoy = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const ESTADOS = { VIGENTE: 'ok', UTILIZADA: '', CANCELADA: 'off', VENCIDA: 'off', REVOCADA: 'off' };
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+// RF-064: parqueaderos de visitantes disponibles.
+async function cargarDisponibilidad() {
+  try {
+    const d = await api('/api/visitas/parqueaderos-disponibles');
+    textoParq = d.total
+      ? 'Parqueaderos de visitantes disponibles ahora: ' + d.disponibles + ' de ' + d.total + '.'
+      : 'Todavía no hay parqueaderos de visitantes registrados.';
+    $('infoParq').textContent = textoParq;
+    $('infoParq').hidden = false;
+  } catch (e) {
+    textoParq = '';
+    $('infoParq').hidden = true;
+  }
+}
+
+async function cargar() {
+  try {
+    lista = await api('/api/visitas');
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const est = $('fEstado').value;
+  const filas = lista.filter(v => !est || v.estado === est);
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay visitas para mostrar.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = filas.map(v => `
+    <tr>
+      <td><strong>${esc(v.nombre)}</strong></td>
+      <td>${esc(v.documento)}</td>
+      <td>${esc(v.inmueble)}</td>
+      <td>${esc(v.fechaInicio)}</td>
+      <td>${v.fechaFin ? esc(v.fechaFin) : '—'}</td>
+      <td>${v.usaParqueadero ? 'Sí' : 'No'}</td>
+      <td><span class="chip ${ESTADOS[v.estado] || ''}">${esc(v.estado)}</span></td>
+      <td class="acciones">${v.estado === 'VIGENTE'
+        ? `<button class="btn peligro" data-cancelar="${v.id}">Cancelar</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+$('filas').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.cancelar) return;
+  if (!confirm('¿Cancelar esta visita? El vigilante ya no la dejará pasar.')) return;
+  try {
+    await api('/api/visitas/' + b.dataset.cancelar + '/cancelar', { method: 'PATCH' });
+    aviso('Visita cancelada.');
+    await cargar();
+  } catch (err) { aviso(err.message, true); }
+});
+
+$('btnNueva').addEventListener('click', async () => {
+  $('form').reset();
+  $('inicio').value = hoy();
+  $('inicio').min = hoy();
+  $('fin').min = hoy();
+  $('error').hidden = true;
+  await cargarDisponibilidad();
+  $('notaParq').textContent = textoParq;
+  $('dlg').showModal();
+});
+$('btnCerrar').addEventListener('click', () => $('dlg').close());
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    nombre: $('nombre').value.trim(),
+    documento: $('documento').value.trim(),
+    fechaInicio: $('inicio').value,
+    usaParqueadero: $('parq').checked
+  };
+  if ($('fin').value) body.fechaFin = $('fin').value;
+  try {
+    await api('/api/visitas', { method: 'POST', body: JSON.stringify(body) });
+    $('dlg').close();
+    aviso('Visita registrada. El vigilante ya puede verla en portería.');
+    await cargar();
+  } catch (err) {
+    $('error').textContent = err.message;
+    $('error').hidden = false;
+  }
+});
+
+$('fEstado').addEventListener('change', pintar);
+cargarDisponibilidad();
+cargar();
+</script>
+</body>
+</html>

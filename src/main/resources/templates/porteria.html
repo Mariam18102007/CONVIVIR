@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Portería')}"></head>
+<body>
+<style>
+  h2.sub { font-size: 1.1rem; margin: 26px 0 10px; }
+  .buscador { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+  .buscador label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--texto-suave); }
+  .buscador input, .buscador select { padding: 8px 10px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; }
+  .rechazo { color: #9b1c1c; font-size: .82rem; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Portería</h1>
+        <p>Registra la entrada y salida de visitantes y autorizados recurrentes.</p>
+      </div>
+      <button class="btn primario" id="btnSin" type="button">Ingreso sin autorización</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <h2 class="sub">1. Buscar autorización</h2>
+    <div class="buscador">
+      <label>Documento del visitante
+        <input id="bDoc" placeholder="Número de documento">
+      </label>
+      <label>o autorizaciones de un inmueble
+        <select id="bInm"><option value="">—</option></select>
+      </label>
+      <button class="btn primario" id="btnBuscar" type="button">Buscar</button>
+    </div>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Tipo</th><th>Persona</th><th>Documento</th><th>Inmueble</th>
+            <th>Vigencia</th><th>Horario</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="resultados">
+          <tr><td colspan="8" class="vacio">Busca por documento o elige un inmueble.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="sub">2. Dentro del conjunto ahora</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Persona</th><th>Tipo</th><th>Documento</th><th>Inmueble</th>
+            <th>Placa</th><th>Ingresó</th><th>Registró</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="dentro"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Registrar ingreso con autorización -->
+<dialog id="dlgIngreso">
+  <h2>Registrar ingreso</h2>
+  <form id="formIngreso">
+    <p class="nota" id="ingDetalle"></p>
+    <div class="campo">
+      <label for="ingPlaca">Placa del vehículo (si llega en uno)</label>
+      <input id="ingPlaca" maxlength="10" style="text-transform:uppercase">
+    </div>
+    <div class="msg-error" id="errorIng" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgIngreso">Cancelar</button>
+      <button type="submit" class="btn primario">Registrar ingreso</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Ingreso sin autorización -->
+<dialog id="dlgSin">
+  <h2>Ingreso sin autorización</h2>
+  <form id="formSin">
+    <div class="campo">
+      <label for="sInmueble">Inmueble de destino</label>
+      <select id="sInmueble" required></select>
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="sNombre">Nombre</label>
+        <input id="sNombre" required maxlength="120">
+      </div>
+      <div class="campo">
+        <label for="sDocumento">Documento</label>
+        <input id="sDocumento" required maxlength="30">
+      </div>
+    </div>
+    <div class="campo">
+      <label for="sMotivo">Motivo (obligatorio)</label>
+      <input id="sMotivo" required maxlength="200" placeholder="Entrega de paquete, visita sin aviso...">
+    </div>
+    <div class="campo">
+      <label for="sPlaca">Placa del vehículo (si aplica)</label>
+      <input id="sPlaca" maxlength="10" style="text-transform:uppercase">
+    </div>
+    <p class="nota">El ingreso queda registrado con tu nombre y el motivo.</p>
+    <div class="msg-error" id="errorSin" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgSin">Cancelar</button>
+      <button type="submit" class="btn primario">Registrar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+let resultados = [], dentro = [], inmuebles = [], objetivo = null, temporizador = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hora = h => h ? String(h).substring(0, 5) : '';
+const fmt = s => s ? String(s).replace('T', ' ').substring(0, 16) : '—';
+const CORTO = { LUNES: 'Lun', MARTES: 'Mar', MIERCOLES: 'Mié', JUEVES: 'Jue', VIERNES: 'Vie', SABADO: 'Sáb', DOMINGO: 'Dom' };
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+/* ---------- Buscar autorizaciones ---------- */
+async function buscar() {
+  const doc = $('bDoc').value.trim();
+  const inm = $('bInm').value;
+  if (!doc && !inm) { aviso('Escribe un documento o elige un inmueble.', true); return; }
+  const p = new URLSearchParams();
+  if (doc) p.set('documento', doc); else p.set('inmuebleId', inm);
+  try {
+    resultados = await api('/api/porteria/autorizaciones?' + p.toString());
+    pintarResultados();
+  } catch (e) { aviso(e.message, true); }
+}
+
+function pintarResultados() {
+  if (!resultados.length) {
+    $('resultados').innerHTML = '<tr><td colspan="8" class="vacio">No hay autorizaciones vigentes para esa búsqueda.</td></tr>';
+    return;
+  }
+  $('resultados').innerHTML = resultados.map(a => {
+    const horario = a.tipo === 'RECURRENTE'
+      ? (a.dias || []).map(d => CORTO[d] || d).join(', ') + ' ' + hora(a.horaInicio) + '–' + hora(a.horaFin)
+      : '—';
+    return `
+    <tr>
+      <td><span class="chip">${esc(a.tipo === 'OCASIONAL' ? 'Visita' : 'Recurrente')}</span></td>
+      <td><strong>${esc(a.nombre)}</strong></td>
+      <td>${esc(a.documento)}</td>
+      <td>${esc(a.inmueble)}</td>
+      <td>${esc(a.fechaInicio)}${a.fechaFin && a.fechaFin !== a.fechaInicio ? ' a ' + esc(a.fechaFin) : ''}</td>
+      <td>${esc(horario)}</td>
+      <td>${a.puedeIngresar
+        ? '<span class="chip ok">Puede ingresar</span>'
+        : '<span class="chip off">No puede</span><div class="rechazo">' + esc(a.motivoRechazo) + '</div>'}</td>
+      <td class="acciones">${a.puedeIngresar
+        ? `<button class="btn primario" data-ingresar="${a.id}">Registrar ingreso</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+$('resultados').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.ingresar) return;
+  objetivo = resultados.find(a => String(a.id) === b.dataset.ingresar);
+  $('ingDetalle').textContent = objetivo.nombre + ' (' + objetivo.documento + ') → ' + objetivo.inmueble;
+  $('ingPlaca').value = '';
+  $('errorIng').hidden = true;
+  $('dlgIngreso').showModal();
+});
+
+$('formIngreso').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = { autorizacionId: objetivo.id };
+  const placa = $('ingPlaca').value.trim();
+  if (placa) body.placa = placa.toUpperCase();
+  try {
+    await api('/api/porteria/ingresos', { method: 'POST', body: JSON.stringify(body) });
+    $('dlgIngreso').close();
+    aviso('Ingreso registrado.');
+    await buscar();
+    await cargarDentro();
+  } catch (err) {
+    $('errorIng').textContent = err.message;
+    $('errorIng').hidden = false;
+  }
+});
+
+/* ---------- Ingreso sin autorización ---------- */
+$('btnSin').addEventListener('click', () => {
+  $('formSin').reset();
+  $('sInmueble').innerHTML = '<option value="">Seleccione...</option>' +
+    inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('errorSin').hidden = true;
+  $('dlgSin').showModal();
+});
+
+$('formSin').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    inmuebleId: Number($('sInmueble').value),
+    nombre: $('sNombre').value.trim(),
+    documento: $('sDocumento').value.trim(),
+    motivo: $('sMotivo').value.trim()
+  };
+  const placa = $('sPlaca').value.trim();
+  if (placa) body.placa = placa.toUpperCase();
+  try {
+    await api('/api/porteria/ingresos/sin-autorizacion', { method: 'POST', body: JSON.stringify(body) });
+    $('dlgSin').close();
+    aviso('Ingreso sin autorización registrado.');
+    await cargarDentro();
+  } catch (err) {
+    $('errorSin').textContent = err.message;
+    $('errorSin').hidden = false;
+  }
+});
+
+/* ---------- Dentro del conjunto ---------- */
+async function cargarDentro() {
+  try {
+    dentro = await api('/api/porteria/dentro');
+    pintarDentro();
+  } catch (e) {
+    $('dentro').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintarDentro() {
+  if (!dentro.length) {
+    $('dentro').innerHTML = '<tr><td colspan="8" class="vacio">No hay nadie dentro en este momento.</td></tr>';
+    return;
+  }
+  $('dentro').innerHTML = dentro.map(m => `
+    <tr>
+      <td><strong>${esc(m.nombre)}</strong>${m.motivo ? '<br><small>' + esc(m.motivo) + '</small>' : ''}</td>
+      <td>${esc(m.tipo === 'OCASIONAL' ? 'Visita' : (m.tipo === 'RECURRENTE' ? 'Recurrente' : m.tipo))}</td>
+      <td>${esc(m.documento)}</td>
+      <td>${esc(m.inmueble)}</td>
+      <td>${esc(m.placa)}</td>
+      <td>${esc(fmt(m.ingresoEn))}</td>
+      <td>${esc(m.vigilanteIngreso)}</td>
+      <td class="acciones"><button class="btn" data-salida="${m.id}">Registrar salida</button></td>
+    </tr>`).join('');
+}
+
+$('dentro').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.salida) return;
+  try {
+    await api('/api/porteria/ingresos/' + b.dataset.salida + '/salida', { method: 'PATCH' });
+    aviso('Salida registrada.');
+    await cargarDentro();
+  } catch (err) { aviso(err.message, true); }
+});
+
+document.querySelectorAll('[data-cerrar]').forEach(b => {
+  b.addEventListener('click', () => $(b.dataset.cerrar).close());
+});
+$('btnBuscar').addEventListener('click', buscar);
+$('bDoc').addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });
+
+(async () => {
+  try {
+    inmuebles = await api('/api/inmuebles?activo=true');
+    $('bInm').innerHTML = '<option value="">—</option>' +
+      inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  } catch (e) { aviso('No se pudo cargar la lista de inmuebles.', true); }
+  cargarDentro();
+})();
+</script>
+</body>
+</html>

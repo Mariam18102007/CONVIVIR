@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Inmuebles')}"></head>
+<body>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Inmuebles</h1>
+        <p>Unidades privadas y bienes comunes de la propiedad horizontal.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Nuevo inmueble</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Tipo
+        <select id="fTipo"><option value="">Todos</option></select>
+      </label>
+      <label>Naturaleza
+        <select id="fNaturaleza">
+          <option value="">Todas</option>
+          <option value="BIEN_PRIVADO">Bien privado</option>
+          <option value="BIEN_COMUN_USO_EXCLUSIVO">Bien común de uso exclusivo</option>
+          <option value="BIEN_COMUN_USO_GENERAL">Bien común de uso general</option>
+        </select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="true" selected>Activos</option>
+          <option value="false">Inactivos</option>
+        </select>
+      </label>
+      <label>Contenedor
+        <select id="fContenedor"><option value="">Todos</option></select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Identificación</th><th>Tipo</th><th>Naturaleza</th><th>Coeficiente</th>
+            <th>Área</th><th>Contenedor</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"><tr><td colspan="8" class="vacio">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Crear / editar -->
+<dialog id="dlgForm">
+  <h2 id="formTitulo">Nuevo inmueble</h2>
+  <form id="form">
+    <div class="campo">
+      <label for="identificacion">Identificación</label>
+      <input id="identificacion" required maxlength="60" placeholder="Ej.: Torre 1 - Apto 101">
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="naturaleza">Naturaleza</label>
+        <select id="naturaleza" required>
+          <option value="">Seleccione...</option>
+          <option value="BIEN_PRIVADO">Bien privado</option>
+          <option value="BIEN_COMUN_USO_EXCLUSIVO">Bien común de uso exclusivo</option>
+          <option value="BIEN_COMUN_USO_GENERAL">Bien común de uso general</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tipo">Tipo de inmueble</label>
+        <select id="tipo" required></select>
+      </div>
+      <div class="campo">
+        <label for="coeficiente">Coeficiente de copropiedad</label>
+        <input id="coeficiente" type="number" step="any" min="0">
+      </div>
+      <div class="campo">
+        <label for="area">Área (m²)</label>
+        <input id="area" type="number" step="any" min="0">
+      </div>
+    </div>
+    <div class="campo">
+      <label for="contenedor">Inmueble contenedor (opcional)</label>
+      <select id="contenedor"></select>
+    </div>
+    <p class="nota" id="nota" hidden>Al editar solo se pueden cambiar la identificación, el tipo y el coeficiente.</p>
+    <div class="msg-error" id="errorForm" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgForm">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Motivo de desactivación -->
+<dialog id="dlgMotivo">
+  <h2>Desactivar inmueble</h2>
+  <form id="formMotivo">
+    <p class="nota">Inmueble: <strong id="motivoInmueble"></strong></p>
+    <div class="campo">
+      <label for="motivoTxt">Motivo (obligatorio)</label>
+      <input id="motivoTxt" required maxlength="200">
+    </div>
+    <div class="msg-error" id="errorMotivo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgMotivo">Cancelar</button>
+      <button type="submit" class="btn peligro">Desactivar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const API = '/api/inmuebles';
+const NAT = {
+  BIEN_PRIVADO: 'Bien privado',
+  BIEN_COMUN_USO_EXCLUSIVO: 'Bien común de uso exclusivo',
+  BIEN_COMUN_USO_GENERAL: 'Bien común de uso general'
+};
+let tipos = [], todos = [], actuales = [], editando = null, desactivando = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar. Revisa que la identificación no esté repetida.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+async function cargarTipos() {
+  tipos = await api('/api/tipos-inmueble');
+  $('fTipo').innerHTML = '<option value="">Todos</option>' +
+    tipos.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+}
+
+function llenarFiltroContenedor() {
+  const previo = $('fContenedor').value;
+  $('fContenedor').innerHTML = '<option value="">Todos</option>' +
+    todos.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  $('fContenedor').value = previo;
+}
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fTipo').value) p.set('tipoId', $('fTipo').value);
+  if ($('fNaturaleza').value) p.set('naturaleza', $('fNaturaleza').value);
+  if ($('fEstado').value) p.set('activo', $('fEstado').value);
+  if ($('fContenedor').value) p.set('contenedorId', $('fContenedor').value);
+  try {
+    const resultados = await Promise.all([api(API + '?' + p.toString()), api(API)]);
+    actuales = resultados[0];
+    todos = resultados[1];
+    llenarFiltroContenedor();
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  if (!actuales.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay inmuebles con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = actuales.map(i => `
+    <tr>
+      <td><strong>${esc(i.identificacion)}</strong></td>
+      <td>${esc(i.tipoInmueble ? i.tipoInmueble.nombre : '')}</td>
+      <td>${esc(NAT[i.naturaleza] || i.naturaleza)}</td>
+      <td>${i.coeficiente == null ? '—' : esc(i.coeficiente)}</td>
+      <td>${i.area == null ? '—' : esc(i.area)}</td>
+      <td>${i.contenedor ? esc(i.contenedor.identificacion) : '—'}</td>
+      <td>${i.activo
+        ? '<span class="chip ok">Activo</span>'
+        : `<span class="chip off" title="${esc(i.motivoDesactivacion)}">Inactivo</span>`}</td>
+      <td class="acciones">
+        <button class="btn" data-editar="${i.id}">Editar</button>
+        ${i.activo
+          ? `<button class="btn peligro" data-desactivar="${i.id}">Desactivar</button>`
+          : `<button class="btn" data-reactivar="${i.id}">Reactivar</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+function buscarActual(id) {
+  return actuales.find(i => String(i.id) === String(id));
+}
+
+function abrirForm(inm) {
+  editando = inm || null;
+  $('formTitulo').textContent = inm ? 'Editar inmueble' : 'Nuevo inmueble';
+
+  const tiposForm = tipos.filter(t => t.activo || (inm && inm.tipoInmueble && inm.tipoInmueble.id === t.id));
+  $('tipo').innerHTML = '<option value="">Seleccione...</option>' +
+    tiposForm.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+
+  $('contenedor').innerHTML = '<option value="">Ninguno</option>' +
+    todos.filter(x => x.activo && (!inm || x.id !== inm.id))
+         .map(x => `<option value="${x.id}">${esc(x.identificacion)}</option>`).join('');
+
+  $('identificacion').value = inm ? inm.identificacion : '';
+  $('naturaleza').value = inm ? inm.naturaleza : '';
+  $('tipo').value = inm && inm.tipoInmueble ? inm.tipoInmueble.id : '';
+  $('coeficiente').value = inm && inm.coeficiente != null ? inm.coeficiente : '';
+  $('area').value = inm && inm.area != null ? inm.area : '';
+  $('contenedor').value = inm && inm.contenedor ? inm.contenedor.id : '';
+
+  ['naturaleza', 'area', 'contenedor'].forEach(id => { $(id).disabled = !!inm; });
+  $('nota').hidden = !inm;
+  $('errorForm').hidden = true;
+  $('dlgForm').showModal();
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const num = v => (v === '' ? null : Number(v));
+  const body = {
+    identificacion: $('identificacion').value.trim(),
+    coeficiente: num($('coeficiente').value),
+    area: num($('area').value),
+    naturaleza: editando ? editando.naturaleza : $('naturaleza').value,
+    tipoInmueble: { id: Number($('tipo').value) },
+    contenedor: $('contenedor').value ? { id: Number($('contenedor').value) } : null
+  };
+  const eraEdicion = !!editando;
+  try {
+    if (eraEdicion) await api(API + '/' + editando.id, { method: 'PUT', body: JSON.stringify(body) });
+    else await api(API, { method: 'POST', body: JSON.stringify(body) });
+    $('dlgForm').close();
+    aviso(eraEdicion ? 'Inmueble actualizado.' : 'Inmueble creado.');
+    await cargar();
+  } catch (err) {
+    $('errorForm').textContent = err.message;
+    $('errorForm').hidden = false;
+  }
+});
+
+function pedirMotivo(inm) {
+  desactivando = inm;
+  $('motivoInmueble').textContent = inm.identificacion;
+  $('motivoTxt').value = '';
+  $('errorMotivo').hidden = true;
+  $('dlgMotivo').showModal();
+}
+
+$('formMotivo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const motivo = $('motivoTxt').value.trim();
+  if (!motivo) {
+    $('errorMotivo').textContent = 'El motivo es obligatorio.';
+    $('errorMotivo').hidden = false;
+    return;
+  }
+  try {
+    await api(API + '/' + desactivando.id + '/desactivar?motivo=' + encodeURIComponent(motivo), { method: 'PATCH' });
+    $('dlgMotivo').close();
+    aviso('Inmueble desactivado.');
+    await cargar();
+  } catch (err) {
+    $('errorMotivo').textContent = err.message;
+    $('errorMotivo').hidden = false;
+  }
+});
+
+$('filas').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.editar) abrirForm(buscarActual(b.dataset.editar));
+  if (b.dataset.desactivar) pedirMotivo(buscarActual(b.dataset.desactivar));
+  if (b.dataset.reactivar) {
+    try {
+      await api(API + '/' + b.dataset.reactivar + '/reactivar', { method: 'PATCH' });
+      aviso('Inmueble reactivado.');
+      await cargar();
+    } catch (err) { aviso(err.message, true); }
+  }
+});
+
+document.querySelectorAll('[data-cerrar]').forEach(b => {
+  b.addEventListener('click', () => $(b.dataset.cerrar).close());
+});
+['fTipo', 'fNaturaleza', 'fEstado', 'fContenedor'].forEach(id => $(id).addEventListener('change', cargar));
+$('btnNuevo').addEventListener('click', () => abrirForm(null));
+
+(async () => {
+  try { await cargarTipos(); } catch (e) { aviso(e.message, true); }
+  await cargar();
+})();
+</script>
+</body>
+</html>

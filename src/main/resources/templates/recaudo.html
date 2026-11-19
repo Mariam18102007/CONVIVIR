@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Recaudo')}"></head>
+<body>
+<style>
+  .num { text-align: right; white-space: nowrap; }
+  .resumen { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin: 0 0 20px; }
+  .saldo { font-size: 1.6rem; font-weight: 700; margin: 6px 0 2px; }
+  h2.sub { font-size: 1.1rem; margin: 24px 0 10px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Recaudo</h1>
+      <p>Total recaudado en un periodo, por canal y por medio de pago (solo pagos confirmados).</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Desde <input type="date" id="fDesde"></label>
+      <label>Hasta <input type="date" id="fHasta"></label>
+      <button class="btn" id="btnMes" type="button">Mes actual</button>
+    </section>
+
+    <div class="resumen">
+      <div class="tarjeta">
+        <h2>Total recaudado</h2>
+        <div class="saldo" id="total">—</div>
+        <p class="nota" style="margin:0" id="cantidad"></p>
+      </div>
+    </div>
+
+    <h2 class="sub">Por canal</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead><tr><th>Canal</th><th class="num">Pagos</th><th class="num">Total</th></tr></thead>
+        <tbody id="filasCanal"></tbody>
+      </table>
+    </div>
+
+    <h2 class="sub">Por medio de pago</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead><tr><th>Medio</th><th class="num">Pagos</th><th class="num">Total</th></tr></thead>
+        <tbody id="filasMedio"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const fmt = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('Error ' + r.status));
+  }
+  return r.json();
+}
+
+function aviso(msg) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = 'aviso error';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+function mesActual() {
+  const d = new Date();
+  $('fDesde').value = fmt(new Date(d.getFullYear(), d.getMonth(), 1));
+  $('fHasta').value = fmt(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
+
+const lineas = ls => ls.map(l => `
+  <tr><td>${esc(l.etiqueta)}</td><td class="num">${l.pagos}</td><td class="num">${dinero(l.total)}</td></tr>`).join('');
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fDesde').value) p.set('desde', $('fDesde').value);
+  if ($('fHasta').value) p.set('hasta', $('fHasta').value);
+  try {
+    const r = await api('/api/recaudo?' + p.toString());
+    $('total').textContent = dinero(r.total);
+    $('cantidad').textContent = r.pagos + ' pagos confirmados del ' + r.desde + ' al ' + r.hasta;
+    $('filasCanal').innerHTML = lineas(r.porCanal);
+    $('filasMedio').innerHTML = lineas(r.porMedio);
+  } catch (e) { aviso(e.message); }
+}
+
+$('fDesde').addEventListener('change', cargar);
+$('fHasta').addEventListener('change', cargar);
+$('btnMes').addEventListener('click', () => { mesActual(); cargar(); });
+
+mesActual();
+cargar();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera(${modulo.titulo()})}"></head>
+<body>
+<style>
+  .lista-rf { margin: 12px 0 16px; padding-left: 20px; line-height: 1.7; }
+  .bloque { max-width: 760px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1 th:text="${modulo.titulo()}">Módulo</h1>
+      <p th:text="${modulo.descripcion()}">Descripción</p>
+    </header>
+
+    <section class="tarjeta bloque">
+      <span class="etiqueta" style="margin-top:0">Próximamente</span>
+      <h2 style="margin-top:12px">Qué podrás hacer aquí</h2>
+      <ul class="lista-rf">
+        <li th:each="f : ${modulo.funciones()}" th:text="${f}">Función</li>
+      </ul>
+      <p class="nota">
+        Lo usa: <strong th:text="${modulo.quien()}">Rol</strong>
+        · Según: <strong th:text="${modulo.casoUso()}">CU</strong> del documento de requisitos
+      </p>
+    </section>
+  </main>
+</div>
+</body>
+</html>

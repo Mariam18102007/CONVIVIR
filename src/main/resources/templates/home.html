@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Inicio')}"></head>
+<body>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Hola, <span th:text="${usuario}">usuario</span></h1>
+      <p>Estos son los módulos disponibles para tu rol.</p>
+    </header>
+
+    <section class="tarjetas">
+      <th:block th:each="item, estado : ${menu}">
+        <a th:if="${!estado.first and item.disponible()}"
+           th:href="@{${item.url()}}" class="tarjeta">
+          <h2 th:text="${item.titulo()}">Módulo</h2>
+          <p>Abrir</p>
+        </a>
+        <div th:if="${!estado.first and !item.disponible()}" class="tarjeta pronto">
+          <h2 th:text="${item.titulo()}">Módulo</h2>
+          <p>Todavía no está construido.</p>
+          <span class="etiqueta">Próximamente</span>
+        </div>
+      </th:block>
+    </section>
+  </main>
+</div>
+</body>
+</html>

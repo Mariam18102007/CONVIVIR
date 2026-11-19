@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Cartera')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  .totales { margin: 0 0 10px; font-size: .9rem; color: var(--texto-suave); }
+  .ancho { width: min(760px, 94vw); }
+  .acciones-cab { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido" th:attr="data-admin=${admin}">
+    <header class="encabezado fila">
+      <div>
+        <h1>Cartera</h1>
+        <p id="subtitulo">Inmuebles con saldo pendiente y su antigüedad de mora.</p>
+      </div>
+      <div class="acciones-cab" id="accionesAdmin" hidden>
+        <a class="btn" id="btnExportar" href="#">Exportar CSV</a>
+        <button class="btn" id="btnPaz" type="button">Paz y salvo</button>
+        <button class="btn primario" id="btnIntereses" type="button">Generar intereses de mora</button>
+      </div>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Periodo
+        <input type="month" id="fPeriodo">
+      </label>
+      <label>Mora
+        <select id="fMora">
+          <option value="">Todas</option>
+          <option value="0,0">Al día (sin vencer)</option>
+          <option value="1,30">1 a 30 días</option>
+          <option value="31,60">31 a 60 días</option>
+          <option value="61,90">61 a 90 días</option>
+          <option value="91,">Más de 90 días</option>
+        </select>
+      </label>
+      <button class="btn" id="btnLimpiar" type="button">Quitar filtros</button>
+    </section>
+
+    <p class="totales" id="totales"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Inmueble</th><th>Tipo</th><th class="num">Saldo pendiente</th>
+            <th class="num">Saldo vencido</th><th>Obligaciones</th><th>Mora</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Detalle de la deuda -->
+<dialog id="dlgDetalle" class="ancho">
+  <h2 id="detTitulo">Deuda</h2>
+  <p class="nota" id="detResumen"></p>
+  <div class="tabla-scroll">
+    <table class="tabla">
+      <thead>
+        <tr>
+          <th>Periodo</th><th>Concepto</th><th>Detalle</th><th class="num">Valor</th>
+          <th class="num">Saldo</th><th>Vence</th><th>Mora</th>
+        </tr>
+      </thead>
+      <tbody id="detFilas"></tbody>
+    </table>
+  </div>
+  <div class="botones">
+    <button type="button" class="btn" id="btnCerrarDetalle">Cerrar</button>
+  </div>
+</dialog>
+
+<!-- Paz y salvo (administrador) -->
+<dialog id="dlgPaz">
+  <h2>Expedir paz y salvo</h2>
+  <form id="formPaz">
+    <div class="campo">
+      <label for="pzInmueble">Inmueble</label>
+      <select id="pzInmueble" required></select>
+    </div>
+    <div class="campo">
+      <label for="pzCorte">Fecha de corte</label>
+      <input id="pzCorte" type="date" required>
+    </div>
+    <p class="nota">Se abrirá un certificado imprimible que indica si el inmueble está a paz y salvo o qué obligaciones debe a esa fecha.</p>
+    <div class="msg-error" id="errorPaz" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarPaz">Cancelar</button>
+      <button type="submit" class="btn primario">Abrir certificado</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Intereses de mora (administrador) -->
+<dialog id="dlgIntereses">
+  <h2>Generar intereses de mora</h2>
+  <form id="formIntereses">
+    <div class="campo">
+      <label for="inTasa">Tasa de interés mensual (%)</label>
+      <input id="inTasa" type="number" min="0.01" max="10" step="0.01" required placeholder="Ej.: 2">
+    </div>
+    <p class="nota">Escribe la tasa mensual vigente (artículo 30 de la Ley 675: una y media veces el interés bancario corriente).
+      Se genera un interés simple sobre el saldo vencido de cada cuota de administración y extraordinaria, una sola vez por mes por obligación.
+      Si ya se generó este mes, no se repite.</p>
+    <div class="msg-error" id="errorIntereses" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarIntereses">Cancelar</button>
+      <button type="submit" class="btn primario">Generar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const ADMIN = document.querySelector('main.contenido').dataset.admin === 'true';
+let filas = [], temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const fmt = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo completar la operación.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+function chipMora(d) {
+  if (d <= 0) return '<span class="chip ok">Al día</span>';
+  if (d <= 30) return '<span class="chip warn">' + d + ' días</span>';
+  return '<span class="chip off">' + d + ' días</span>';
+}
+
+function parametros() {
+  const p = new URLSearchParams();
+  if ($('fPeriodo').value) p.set('periodo', $('fPeriodo').value);
+  const m = $('fMora').value;
+  if (m) {
+    const partes = m.split(',');
+    if (partes[0] !== '') p.set('minDias', partes[0]);
+    if (partes[1] !== '') p.set('maxDias', partes[1]);
+  }
+  return p;
+}
+
+async function cargar() {
+  const p = parametros();
+  try {
+    filas = await api('/api/cartera?' + p.toString());
+    if (ADMIN) $('btnExportar').href = '/api/cartera/exportar?' + p.toString();
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No se pudo cargar la cartera.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const saldo = filas.reduce((s, f) => s + f.saldoPendiente, 0);
+  const vencido = filas.reduce((s, f) => s + f.saldoVencido, 0);
+  $('totales').textContent = filas.length + ' inmuebles con saldo · Pendiente ' + dinero(saldo) +
+    ' · Vencido ' + dinero(vencido);
+  if (!filas.length) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No hay inmuebles con saldo pendiente con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = filas.map(f => `
+    <tr>
+      <td><strong>${esc(f.inmueble)}</strong></td>
+      <td>${esc(f.tipo)}</td>
+      <td class="num">${dinero(f.saldoPendiente)}</td>
+      <td class="num">${dinero(f.saldoVencido)}</td>
+      <td>${f.obligaciones}</td>
+      <td>${chipMora(f.diasMora)}</td>
+      <td class="acciones"><button class="btn" data-detalle="${f.inmuebleId}">Ver detalle</button></td>
+    </tr>`).join('');
+}
+
+$('fPeriodo').addEventListener('change', cargar);
+$('fMora').addEventListener('change', cargar);
+$('btnLimpiar').addEventListener('click', () => { $('fPeriodo').value = ''; $('fMora').value = ''; cargar(); });
+
+/* ---------- Detalle ---------- */
+$('filas').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-detalle]');
+  if (!b) return;
+  const p = new URLSearchParams();
+  if ($('fPeriodo').value) p.set('periodo', $('fPeriodo').value);
+  try {
+    const d = await api('/api/cartera/inmuebles/' + b.dataset.detalle + '?' + p.toString());
+    $('detTitulo').textContent = 'Deuda de ' + d.inmueble;
+    $('detResumen').textContent = 'Saldo pendiente ' + dinero(d.saldoPendiente) + ' · Vencido ' + dinero(d.saldoVencido);
+    $('detFilas').innerHTML = d.deudas.length ? d.deudas.map(l => `
+      <tr>
+        <td>${esc(l.periodo)}</td>
+        <td>${esc(l.concepto)}</td>
+        <td>${l.descripcion ? esc(l.descripcion) : '—'}</td>
+        <td class="num">${dinero(l.valor)}</td>
+        <td class="num">${dinero(l.saldo)}</td>
+        <td>${esc(l.fechaVencimiento)}</td>
+        <td>${chipMora(l.diasMora)}</td>
+      </tr>`).join('') : '<tr><td colspan="7" class="vacio">Sin deuda.</td></tr>';
+    $('dlgDetalle').showModal();
+  } catch (err) { aviso(err.message, true); }
+});
+$('btnCerrarDetalle').addEventListener('click', () => $('dlgDetalle').close());
+
+/* ---------- Solo administrador ---------- */
+if (ADMIN) {
+  $('accionesAdmin').hidden = false;
+  $('subtitulo').textContent = 'Inmuebles con saldo pendiente, mora, exportación, paz y salvo e intereses.';
+
+  // Paz y salvo
+  $('btnPaz').addEventListener('click', async () => {
+    $('errorPaz').hidden = true;
+    try {
+      const inm = await api('/api/inmuebles?activo=true');
+      $('pzInmueble').innerHTML = '<option value="">Seleccione...</option>' +
+        inm.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+      $('pzCorte').value = fmt(new Date());
+      $('pzCorte').max = fmt(new Date());
+      $('dlgPaz').showModal();
+    } catch (e) { aviso(e.message, true); }
+  });
+  $('formPaz').addEventListener('submit', e => {
+    e.preventDefault();
+    const id = $('pzInmueble').value;
+    if (!id) {
+      $('errorPaz').textContent = 'Seleccione el inmueble.';
+      $('errorPaz').hidden = false;
+      return;
+    }
+    window.open('/api/cartera/inmuebles/' + id + '/paz-y-salvo?corte=' + encodeURIComponent($('pzCorte').value),
+      '_blank', 'noopener');
+    $('dlgPaz').close();
+  });
+  $('btnCancelarPaz').addEventListener('click', () => $('dlgPaz').close());
+
+  // Intereses de mora
+  $('btnIntereses').addEventListener('click', () => {
+    $('formIntereses').reset();
+    $('errorIntereses').hidden = true;
+    $('dlgIntereses').showModal();
+  });
+  $('formIntereses').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/cartera/intereses-mora', {
+        method: 'POST',
+        body: JSON.stringify({ tasaMensual: Number($('inTasa').value) })
+      });
+      $('dlgIntereses').close();
+      aviso('Intereses de ' + r.periodo + ': ' + r.generados + ' generados por ' + dinero(r.valorTotal) +
+        ', ' + r.yaExistian + ' ya existían, ' + r.omitidos + ' omitidos.');
+      await cargar();
+    } catch (err) {
+      $('errorIntereses').textContent = err.message;
+      $('errorIntereses').hidden = false;
+    }
+  });
+  $('btnCancelarIntereses').addEventListener('click', () => $('dlgIntereses').close());
+} else {
+  $('subtitulo').textContent = 'Consulta de cartera por inmueble (solo lectura).';
+}
+
+cargar();
+</script>
+</body>
+</html>

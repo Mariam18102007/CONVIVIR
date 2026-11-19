@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Reportes y novedades')}"></head>
+<body>
+<style>
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .chip.info { background: #e0ecff; color: #1d4ed8; }
+  .detalle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 0 0 14px; font-size: .92rem; }
+  .detalle-grid dt { color: var(--texto-suave); font-size: .78rem; }
+  .detalle-grid dd { margin: 0 0 6px; }
+  .texto-largo { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
+  .evidencia img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--borde); }
+  .linea { list-style: none; margin: 0 0 14px; padding: 0; }
+  .linea li { border-left: 3px solid var(--borde); padding: 2px 0 8px 12px; font-size: .88rem; }
+  .linea small { color: var(--texto-suave); display: block; }
+  .bloque { border-top: 1px solid var(--borde); padding-top: 14px; margin-top: 14px; }
+  .campo textarea { resize: vertical; min-height: 80px; }
+  .grupo { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; align-items: flex-end; }
+  .grupo .campo { margin: 0; flex: 1; min-width: 200px; }
+  h3 { font-size: 1rem; margin: 14px 0 6px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Reportes y novedades</h1>
+        <p>Daños y novedades que reportan los residentes y el vigilante.</p>
+      </div>
+      <button class="btn" id="btnCategorias" type="button">Categorías</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="ABIERTO">Abierto</option>
+          <option value="EN_PROCESO">En proceso</option>
+          <option value="CERRADO">Cerrado</option>
+        </select>
+      </label>
+      <label>Categoría
+        <select id="fCategoria"><option value="">Todas</option></select>
+      </label>
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Categoría</th><th>Descripción</th><th>Inmueble</th><th>Reportó</th>
+            <th>Fecha</th><th>Estado</th><th>Responsable</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Detalle y gestión -->
+<dialog id="dlgDetalle" style="width: min(760px, 94vw);">
+  <h2 id="dTitulo">Reporte</h2>
+  <div id="dCuerpo"></div>
+  <div class="msg-error" id="errorDetalle" hidden></div>
+  <div class="botones">
+    <button type="button" class="btn" id="btnCerrarDetalle">Cerrar ventana</button>
+  </div>
+</dialog>
+
+<!-- Cerrar reporte -->
+<dialog id="dlgCerrar">
+  <h2>Cerrar reporte</h2>
+  <form id="formCerrar">
+    <div class="campo">
+      <label for="solucion">Solución aplicada (obligatoria)</label>
+      <textarea id="solucion" required maxlength="1000" rows="4"></textarea>
+    </div>
+    <p class="nota">Al cerrar, el reporte ya no admite cambios.</p>
+    <div class="msg-error" id="errorCerrar" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarCierre">Cancelar</button>
+      <button type="submit" class="btn primario">Cerrar reporte</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Categorías -->
+<dialog id="dlgCategorias" style="width: min(660px, 94vw);">
+  <h2>Categorías de reporte</h2>
+  <div class="tabla-scroll">
+    <table class="tabla">
+      <thead><tr><th>Nombre</th><th>Descripción</th><th>Estado</th><th></th></tr></thead>
+      <tbody id="filasCat"></tbody>
+    </table>
+  </div>
+  <form id="formCat" class="bloque">
+    <h3 id="catTitulo">Nueva categoría</h3>
+    <div class="dos">
+      <div class="campo">
+        <label for="catNombre">Nombre</label>
+        <input id="catNombre" required maxlength="60">
+      </div>
+      <div class="campo">
+        <label for="catDesc">Descripción (opcional)</label>
+        <input id="catDesc" maxlength="200">
+      </div>
+    </div>
+    <div class="msg-error" id="errorCat" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnCancelarCat" hidden>Cancelar edición</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+  <div class="botones">
+    <button type="button" class="btn" id="btnCerrarCat">Cerrar ventana</button>
+  </div>
+</dialog>
+
+<script>
+const ESTADOS = { ABIERTO: 'Abierto', EN_PROCESO: 'En proceso', CERRADO: 'Cerrado' };
+const CHIP = { ABIERTO: 'warn', EN_PROCESO: 'info', CERRADO: 'ok' };
+let lista = [], categorias = [], inmuebles = [], responsables = [], actual = null,
+    editandoCat = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fecha = iso => iso ? new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const corto = (t, n) => { t = String(t == null ? '' : t); return t.length > n ? t.slice(0, n) + '…' : t; };
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+function mostrarError(id, msg) {
+  $(id).textContent = msg;
+  $(id).hidden = false;
+}
+
+// ---------- Listado ----------
+
+function pintarFiltros() {
+  const c = $('fCategoria').value, i = $('fInmueble').value;
+  $('fCategoria').innerHTML = '<option value="">Todas</option>' +
+    categorias.map(x => `<option value="${x.id}">${esc(x.nombre)}${x.activo ? '' : ' (desactivada)'}</option>`).join('');
+  $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+    inmuebles.map(x => `<option value="${x.id}">${esc(x.identificacion)}</option>`).join('');
+  $('fCategoria').value = c;
+  $('fInmueble').value = i;
+}
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fEstado').value) p.set('estado', $('fEstado').value);
+  if ($('fCategoria').value) p.set('categoriaId', $('fCategoria').value);
+  if ($('fInmueble').value) p.set('inmuebleId', $('fInmueble').value);
+  try {
+    lista = await api('/api/reportes?' + p.toString());
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="9" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="9" class="vacio">No hay reportes con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(r => `
+    <tr>
+      <td>${r.id}</td>
+      <td>${esc(r.categoria)}</td>
+      <td>${esc(corto(r.descripcion, 50))}</td>
+      <td>${r.inmueble ? esc(r.inmueble) : '—'}</td>
+      <td>${esc(r.creadoPor)}</td>
+      <td>${esc(fecha(r.creadoEn))}</td>
+      <td><span class="chip ${CHIP[r.estado]}">${esc(ESTADOS[r.estado])}</span></td>
+      <td>${r.responsable ? esc(r.responsable) : '—'}</td>
+      <td class="acciones"><button class="btn" data-abrir="${r.id}">Abrir</button></td>
+    </tr>`).join('');
+}
+
+// ---------- Detalle y gestión ----------
+
+function renderDetalle() {
+  const r = actual;
+  $('dTitulo').textContent = 'Reporte N.° ' + r.id;
+  const cerrado = r.estado === 'CERRADO';
+  const opcionesResp = '<option value="">Seleccione...</option>' + responsables.map(o =>
+    `<option value="${o.id}"${String(o.id) === String(r.responsableId) ? ' selected' : ''}>${esc(o.nombre)}</option>`).join('');
+  const destino = r.estado === 'ABIERTO' ? 'EN_PROCESO' : 'ABIERTO';
+  const etiquetaDestino = r.estado === 'ABIERTO' ? 'Pasar a En proceso' : 'Volver a Abierto';
+
+  $('dCuerpo').innerHTML = `
+    <p><span class="chip ${CHIP[r.estado]}">${esc(ESTADOS[r.estado])}</span></p>
+    <dl class="detalle-grid">
+      <div><dt>Categoría</dt><dd>${esc(r.categoria)}</dd></div>
+      <div><dt>Inmueble</dt><dd>${r.inmueble ? esc(r.inmueble) : '—'}</dd></div>
+      <div><dt>Reportó</dt><dd>${esc(r.creadoPor)}</dd></div>
+      <div><dt>Fecha</dt><dd>${esc(fecha(r.creadoEn))}</dd></div>
+      <div><dt>Responsable</dt><dd>${r.responsable ? esc(r.responsable) : 'Sin asignar'}</dd></div>
+      <div><dt>Cerrado</dt><dd>${r.cerradoEn ? esc(fecha(r.cerradoEn)) : '—'}</dd></div>
+    </dl>
+    <h3>Descripción</h3>
+    <p class="texto-largo">${esc(r.descripcion)}</p>
+    ${r.tieneEvidencia
+      ? '<h3>Evidencia</h3><div class="evidencia"><img src="/api/reportes/' + Number(r.id) + '/evidencia" alt="Evidencia del reporte"></div>'
+      : '<p class="nota">Sin imagen adjunta.</p>'}
+    ${r.solucion ? '<h3>Solución aplicada</h3><p class="texto-largo">' + esc(r.solucion) + '</p>' : ''}
+
+    <h3>Seguimiento</h3>
+    <ul class="linea">
+      ${(r.seguimiento || []).map(s => `
+        <li>${esc(s.observacion)}
+          <small>${esc(fecha(s.fecha))} · ${esc(s.usuario)} · ${esc(ESTADOS[s.estado] || s.estado)}</small>
+        </li>`).join('') || '<li>Sin movimientos.</li>'}
+    </ul>
+
+    ${cerrado ? '' : `
+      <div class="bloque">
+        <h3>Gestión</h3>
+        <div class="grupo">
+          <div class="campo">
+            <label for="selResp">Responsable</label>
+            <select id="selResp">${opcionesResp}</select>
+          </div>
+          <button type="button" class="btn" data-accion="asignar">Asignar responsable</button>
+        </div>
+        <div class="grupo">
+          <button type="button" class="btn" data-accion="estado" data-estado="${destino}">${etiquetaDestino}</button>
+        </div>
+        <div class="campo">
+          <label for="txtObs">Observación de seguimiento</label>
+          <textarea id="txtObs" maxlength="1000"></textarea>
+        </div>
+        <div class="grupo">
+          <button type="button" class="btn" data-accion="observar">Agregar observación</button>
+          <button type="button" class="btn primario" data-accion="cerrar">Cerrar reporte…</button>
+        </div>
+      </div>`}`;
+  $('errorDetalle').hidden = true;
+}
+
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-abrir]');
+  if (!b) return;
+  actual = lista.find(r => String(r.id) === b.dataset.abrir);
+  renderDetalle();
+  $('dlgDetalle').showModal();
+});
+
+$('dCuerpo').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-accion]');
+  if (!b) return;
+  $('errorDetalle').hidden = true;
+  const base = '/api/reportes/' + actual.id;
+  try {
+    if (b.dataset.accion === 'asignar') {
+      const id = $('selResp').value;
+      if (!id) throw new Error('Seleccione un responsable.');
+      actual = await api(base + '/responsable', { method: 'PATCH', body: JSON.stringify({ responsableId: Number(id) }) });
+      aviso('Responsable asignado.');
+    } else if (b.dataset.accion === 'estado') {
+      actual = await api(base + '/estado?estado=' + b.dataset.estado, { method: 'PATCH' });
+      aviso('Estado actualizado.');
+    } else if (b.dataset.accion === 'observar') {
+      const texto = $('txtObs').value.trim();
+      if (!texto) throw new Error('Escribe la observación.');
+      actual = await api(base + '/seguimiento', { method: 'POST', body: JSON.stringify({ observacion: texto }) });
+      aviso('Observación registrada.');
+    } else if (b.dataset.accion === 'cerrar') {
+      $('solucion').value = '';
+      $('errorCerrar').hidden = true;
+      $('dlgCerrar').showModal();
+      return;
+    }
+    renderDetalle();
+    cargar();
+  } catch (err) {
+    mostrarError('errorDetalle', err.message);
+  }
+});
+
+$('formCerrar').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    actual = await api('/api/reportes/' + actual.id + '/cerrar',
+      { method: 'PATCH', body: JSON.stringify({ solucion: $('solucion').value.trim() }) });
+    $('dlgCerrar').close();
+    aviso('Reporte cerrado.');
+    renderDetalle();
+    cargar();
+  } catch (err) {
+    mostrarError('errorCerrar', err.message);
+  }
+});
+
+// ---------- Categorías (RF-100, RF-110, RF-111) ----------
+
+function pintarCategorias() {
+  if (!categorias.length) {
+    $('filasCat').innerHTML = '<tr><td colspan="4" class="vacio">Todavía no hay categorías. Crea la primera abajo.</td></tr>';
+    return;
+  }
+  $('filasCat').innerHTML = categorias.map(c => `
+    <tr>
+      <td><strong>${esc(c.nombre)}</strong></td>
+      <td>${c.descripcion ? esc(c.descripcion) : '—'}</td>
+      <td>${c.activo ? '<span class="chip ok">Activa</span>' : '<span class="chip off">Desactivada</span>'}</td>
+      <td class="acciones">${c.activo
+        ? `<button class="btn" data-editar-cat="${c.id}">Modificar</button>
+           <button class="btn peligro" data-desactivar-cat="${c.id}">Desactivar</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+async function recargarCategorias() {
+  categorias = await api('/api/reportes/categorias');
+  pintarCategorias();
+  pintarFiltros();
+}
+
+function limpiarFormCat() {
+  editandoCat = null;
+  $('formCat').reset();
+  $('catTitulo').textContent = 'Nueva categoría';
+  $('btnCancelarCat').hidden = true;
+  $('errorCat').hidden = true;
+}
+
+$('btnCategorias').addEventListener('click', () => {
+  limpiarFormCat();
+  pintarCategorias();
+  $('dlgCategorias').showModal();
+});
+
+$('filasCat').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.editarCat) {
+    editandoCat = categorias.find(c => String(c.id) === b.dataset.editarCat);
+    $('catNombre').value = editandoCat.nombre;
+    $('catDesc').value = editandoCat.descripcion || '';
+    $('catTitulo').textContent = 'Modificar categoría';
+    $('btnCancelarCat').hidden = false;
+    $('errorCat').hidden = true;
+  }
+  if (b.dataset.desactivarCat) {
+    const c = categorias.find(x => String(x.id) === b.dataset.desactivarCat);
+    if (!confirm('¿Desactivar la categoría "' + c.nombre + '"? Los reportes que ya la usan la conservan.')) return;
+    try {
+      await api('/api/reportes/categorias/' + c.id + '/desactivar', { method: 'PATCH' });
+      limpiarFormCat();
+      await recargarCategorias();
+      aviso('Categoría desactivada.');
+    } catch (err) { mostrarError('errorCat', err.message); }
+  }
+});
+
+$('formCat').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = { nombre: $('catNombre').value.trim(), descripcion: $('catDesc').value.trim() };
+  try {
+    if (editandoCat) {
+      await api('/api/reportes/categorias/' + editandoCat.id, { method: 'PUT', body: JSON.stringify(body) });
+      aviso('Categoría modificada.');
+    } else {
+      await api('/api/reportes/categorias', { method: 'POST', body: JSON.stringify(body) });
+      aviso('Categoría creada.');
+    }
+    limpiarFormCat();
+    await recargarCategorias();
+  } catch (err) {
+    mostrarError('errorCat', err.message);
+  }
+});
+
+$('btnCancelarCat').addEventListener('click', limpiarFormCat);
+$('btnCerrarCat').addEventListener('click', () => $('dlgCategorias').close());
+$('btnCerrarDetalle').addEventListener('click', () => $('dlgDetalle').close());
+$('btnCancelarCierre').addEventListener('click', () => $('dlgCerrar').close());
+['fEstado', 'fCategoria', 'fInmueble'].forEach(id => $(id).addEventListener('change', cargar));
+
+(async () => {
+  try {
+    categorias = await api('/api/reportes/categorias');
+    inmuebles = await api('/api/inmuebles');
+    responsables = await api('/api/reportes/admin/responsables');
+    pintarFiltros();
+  } catch (e) { aviso(e.message, true); }
+  await cargar();
+})();
+</script>
+</body>
+</html>

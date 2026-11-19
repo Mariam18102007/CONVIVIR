@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Tipos de inmueble')}"></head>
+<body>
+<style>
+  .checks { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+  .checks label { display: flex; align-items: center; gap: 8px; font-size: .92rem; color: var(--texto); }
+  .checks input { width: auto; padding: 0; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Tipos de inmueble</h1>
+        <p>Definen qué se puede hacer con cada inmueble: cesión de uso, reserva y cuotas.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Nuevo tipo</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="true" selected>Activos</option>
+          <option value="false">Inactivos</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Nombre</th><th>Descripción</th><th>Cesión de uso</th>
+            <th>Reserva</th><th>Genera cuota</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"><tr><td colspan="7" class="vacio">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Crear / editar -->
+<dialog id="dlgForm">
+  <h2 id="formTitulo">Nuevo tipo</h2>
+  <form id="form">
+    <div class="campo">
+      <label for="nombre">Nombre</label>
+      <input id="nombre" required maxlength="60" placeholder="Ej.: Apartamento">
+    </div>
+    <div class="campo">
+      <label for="descripcion">Descripción (opcional)</label>
+      <input id="descripcion" maxlength="200" placeholder="Ej.: Unidad residencial">
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="permiteCesion"> Permite cesión de uso</label>
+      <label><input type="checkbox" id="permiteReserva"> Permite reserva</label>
+      <label><input type="checkbox" id="generaCuota"> Genera cuota</label>
+    </div>
+    <div class="msg-error" id="errorForm" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgForm">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Confirmar desactivación -->
+<dialog id="dlgConfirmar">
+  <h2>Desactivar tipo</h2>
+  <p class="nota">Tipo: <strong id="confirmarNombre"></strong></p>
+  <p class="nota">No se puede desactivar si tiene inmuebles activos.</p>
+  <div class="msg-error" id="errorConfirmar" hidden></div>
+  <div class="botones">
+    <button type="button" class="btn" data-cerrar="dlgConfirmar">Cancelar</button>
+    <button type="button" class="btn peligro" id="btnConfirmar">Desactivar</button>
+  </div>
+</dialog>
+
+<script>
+const API = '/api/tipos-inmueble';
+let todos = [], editando = null, desactivando = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const si = v => (v ? 'Sí' : 'No');
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: el nombre es obligatorio.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+async function cargar() {
+  try {
+    todos = await api(API);
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function pintar() {
+  const estado = $('fEstado').value;
+  const lista = todos.filter(t => estado === '' || String(t.activo) === estado);
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No hay tipos con ese filtro.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(t => `
+    <tr>
+      <td><strong>${esc(t.nombre)}</strong></td>
+      <td>${esc(t.descripcion) || '—'}</td>
+      <td>${si(t.permiteCesion)}</td>
+      <td>${si(t.permiteReserva)}</td>
+      <td>${si(t.generaCuota)}</td>
+      <td>${t.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip off">Inactivo</span>'}</td>
+      <td class="acciones">
+        <button class="btn" data-editar="${t.id}">Editar</button>
+        ${t.activo
+          ? `<button class="btn peligro" data-desactivar="${t.id}">Desactivar</button>`
+          : `<button class="btn" data-reactivar="${t.id}">Reactivar</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+const buscarTipo = id => todos.find(t => String(t.id) === String(id));
+
+function abrirForm(t) {
+  editando = t || null;
+  $('formTitulo').textContent = t ? 'Editar tipo' : 'Nuevo tipo';
+  $('nombre').value = t ? t.nombre : '';
+  $('descripcion').value = t && t.descripcion ? t.descripcion : '';
+  $('permiteCesion').checked = !!(t && t.permiteCesion);
+  $('permiteReserva').checked = !!(t && t.permiteReserva);
+  $('generaCuota').checked = !!(t && t.generaCuota);
+  $('errorForm').hidden = true;
+  $('dlgForm').showModal();
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    nombre: $('nombre').value.trim(),
+    descripcion: $('descripcion').value.trim() || null,
+    permiteCesion: $('permiteCesion').checked,
+    permiteReserva: $('permiteReserva').checked,
+    generaCuota: $('generaCuota').checked
+  };
+  const eraEdicion = !!editando;
+  try {
+    if (eraEdicion) await api(API + '/' + editando.id, { method: 'PUT', body: JSON.stringify(body) });
+    else await api(API, { method: 'POST', body: JSON.stringify(body) });
+    $('dlgForm').close();
+    aviso(eraEdicion ? 'Tipo actualizado.' : 'Tipo creado.');
+    await cargar();
+  } catch (err) {
+    $('errorForm').textContent = err.message;
+    $('errorForm').hidden = false;
+  }
+});
+
+$('btnConfirmar').addEventListener('click', async () => {
+  try {
+    await api(API + '/' + desactivando.id + '/desactivar', { method: 'PATCH' });
+    $('dlgConfirmar').close();
+    aviso('Tipo desactivado.');
+    await cargar();
+  } catch (err) {
+    $('errorConfirmar').textContent = err.message;
+    $('errorConfirmar').hidden = false;
+  }
+});
+
+$('filas').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.editar) abrirForm(buscarTipo(b.dataset.editar));
+  if (b.dataset.desactivar) {
+    desactivando = buscarTipo(b.dataset.desactivar);
+    $('confirmarNombre').textContent = desactivando.nombre;
+    $('errorConfirmar').hidden = true;
+    $('dlgConfirmar').showModal();
+  }
+  if (b.dataset.reactivar) {
+    try {
+      await api(API + '/' + b.dataset.reactivar + '/reactivar', { method: 'PATCH' });
+      aviso('Tipo reactivado.');
+      await cargar();
+    } catch (err) { aviso(err.message, true); }
+  }
+});
+
+document.querySelectorAll('[data-cerrar]').forEach(b => {
+  b.addEventListener('click', () => $(b.dataset.cerrar).close());
+});
+$('fEstado').addEventListener('change', pintar);
+$('btnNuevo').addEventListener('click', () => abrirForm(null));
+
+cargar();
+</script>
+</body>
+</html>

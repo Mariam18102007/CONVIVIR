@@ -1,0 +1,26 @@
+# Compilado
+target/
+
+# Base de datos y archivos subidos (datos personales: nunca al repositorio)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+uploads/
+
+# Archivos de prueba y de herramientas
+auditoria.csv
+.devdbrc
+*.log
+
+# Archivos de la extensión de VS Code (no son del proyecto)
+.github/modernize/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.factorypath

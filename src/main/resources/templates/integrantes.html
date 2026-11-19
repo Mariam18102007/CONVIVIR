@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Integrantes')}"></head>
+<body>
+<style>
+  .checks { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+  .checks label { display: flex; align-items: center; gap: 8px; font-size: .92rem; color: var(--texto); }
+  .checks input { width: auto; padding: 0; }
+  .filtros input { padding: 9px 10px; border: 1px solid #cbd2d9; border-radius: 8px; font-size: .95rem; background: #fff; color: var(--texto); font-family: inherit; min-width: 240px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado fila">
+      <div>
+        <h1>Integrantes</h1>
+        <p>Propietarios, arrendatarios, vigilantes y demás personas de la propiedad horizontal.</p>
+      </div>
+      <button class="btn primario" id="btnNuevo" type="button">+ Nuevo integrante</button>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Buscar
+        <input id="fTexto" type="search" placeholder="Nombre, apellido o documento">
+      </label>
+      <label>Rol
+        <select id="fRol">
+          <option value="">Todos</option>
+          <option value="PROPIETARIO">Propietario</option>
+          <option value="ARRENDATARIO">Arrendatario</option>
+          <option value="RESIDENTE_AUTORIZADO">Residente autorizado</option>
+          <option value="VIGILANTE">Vigilante</option>
+          <option value="MIEMBRO_CONSEJO">Miembro del consejo</option>
+          <option value="ADMINISTRADOR">Administrador</option>
+        </select>
+      </label>
+      <label>Estado
+        <select id="fEstado">
+          <option value="">Todos</option>
+          <option value="true" selected>Activos</option>
+          <option value="false">Inactivos</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Documento</th><th>Nombre</th><th>Rol</th><th>Teléfono</th>
+            <th>Correo</th><th>Residente</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"><tr><td colspan="8" class="vacio">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Crear / editar -->
+<dialog id="dlgForm">
+  <h2 id="formTitulo">Nuevo integrante</h2>
+  <form id="form">
+    <div class="dos">
+      <div class="campo">
+        <label for="rol">Rol</label>
+        <select id="rol" required>
+          <option value="">Seleccione...</option>
+          <option value="PROPIETARIO">Propietario</option>
+          <option value="ARRENDATARIO">Arrendatario</option>
+          <option value="RESIDENTE_AUTORIZADO">Residente autorizado</option>
+          <option value="VIGILANTE">Vigilante</option>
+          <option value="MIEMBRO_CONSEJO">Miembro del consejo</option>
+          <option value="ADMINISTRADOR">Administrador</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tipoDocumento">Tipo de documento</label>
+        <select id="tipoDocumento" required>
+          <option value="CC">Cédula de ciudadanía</option>
+          <option value="CE">Cédula de extranjería</option>
+          <option value="NIT">NIT</option>
+          <option value="PAS">Pasaporte</option>
+        </select>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="numeroDocumento">Número de documento</label>
+      <input id="numeroDocumento" required maxlength="30">
+    </div>
+    <div class="dos">
+      <div class="campo">
+        <label for="nombres">Nombres</label>
+        <input id="nombres" required maxlength="80">
+      </div>
+      <div class="campo">
+        <label for="apellidos">Apellidos</label>
+        <input id="apellidos" required maxlength="80">
+      </div>
+      <div class="campo">
+        <label for="telefono">Teléfono</label>
+        <input id="telefono" maxlength="20">
+      </div>
+      <div class="campo">
+        <label for="correo">Correo electrónico</label>
+        <input id="correo" type="email" maxlength="120">
+      </div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="residente"> Reside en la propiedad</label>
+    </div>
+    <p class="nota" id="nota" hidden>Al editar solo se pueden cambiar el teléfono y el correo.</p>
+    <div class="msg-error" id="errorForm" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgForm">Cancelar</button>
+      <button type="submit" class="btn primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Motivo de desactivación -->
+<dialog id="dlgMotivo">
+  <h2>Desactivar integrante</h2>
+  <form id="formMotivo">
+    <p class="nota">Integrante: <strong id="motivoNombre"></strong></p>
+    <p class="nota">Si tiene una cuenta de acceso, también dejará de poder iniciar sesión.</p>
+    <div class="campo">
+      <label for="motivoTxt">Motivo (obligatorio)</label>
+      <input id="motivoTxt" required maxlength="200">
+    </div>
+    <div class="msg-error" id="errorMotivo" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" data-cerrar="dlgMotivo">Cancelar</button>
+      <button type="submit" class="btn peligro">Desactivar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const API = '/api/integrantes';
+const ROLES = {
+  PROPIETARIO: 'Propietario',
+  ARRENDATARIO: 'Arrendatario',
+  RESIDENTE_AUTORIZADO: 'Residente autorizado',
+  VIGILANTE: 'Vigilante',
+  MIEMBRO_CONSEJO: 'Miembro del consejo',
+  ADMINISTRADOR: 'Administrador'
+};
+let todos = [], editando = null, desactivando = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo guardar.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+async function cargar() {
+  try {
+    todos = await api(API);
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar la lista.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+function filtrados() {
+  const texto = $('fTexto').value.trim().toLowerCase();
+  const rol = $('fRol').value;
+  const estado = $('fEstado').value;
+  return todos.filter(i =>
+    (!rol || i.rol === rol) &&
+    (estado === '' || String(i.activo) === estado) &&
+    (!texto || (i.nombres + ' ' + i.apellidos + ' ' + i.numeroDocumento).toLowerCase().indexOf(texto) >= 0));
+}
+
+function pintar() {
+  const lista = filtrados();
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay integrantes con esos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(i => `
+    <tr>
+      <td>${esc(i.tipoDocumento)} ${esc(i.numeroDocumento)}</td>
+      <td><strong>${esc(i.nombres)} ${esc(i.apellidos)}</strong></td>
+      <td>${esc(ROLES[i.rol] || i.rol)}</td>
+      <td>${esc(i.telefono) || '—'}</td>
+      <td>${esc(i.correo) || '—'}</td>
+      <td>${i.residente ? 'Sí' : 'No'}</td>
+      <td>${i.activo
+        ? '<span class="chip ok">Activo</span>'
+        : `<span class="chip off" title="${esc(i.motivoDesactivacion)}">Inactivo</span>`}</td>
+      <td class="acciones">
+        <button class="btn" data-editar="${i.id}">Editar</button>
+        ${i.activo ? `<button class="btn peligro" data-desactivar="${i.id}">Desactivar</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+const buscarIntegrante = id => todos.find(i => String(i.id) === String(id));
+
+function abrirForm(i) {
+  editando = i || null;
+  $('formTitulo').textContent = i ? 'Editar integrante' : 'Nuevo integrante';
+  $('rol').value = i ? i.rol : '';
+  $('tipoDocumento').value = i ? i.tipoDocumento : 'CC';
+  $('numeroDocumento').value = i ? i.numeroDocumento : '';
+  $('nombres').value = i ? i.nombres : '';
+  $('apellidos').value = i ? i.apellidos : '';
+  $('telefono').value = i && i.telefono ? i.telefono : '';
+  $('correo').value = i && i.correo ? i.correo : '';
+  $('residente').checked = !!(i && i.residente);
+
+  ['rol', 'tipoDocumento', 'numeroDocumento', 'nombres', 'apellidos', 'residente']
+    .forEach(id => { $(id).disabled = !!i; });
+  $('nota').hidden = !i;
+  $('errorForm').hidden = true;
+  $('dlgForm').showModal();
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const eraEdicion = !!editando;
+  const body = {
+    rol: $('rol').value,
+    tipoDocumento: $('tipoDocumento').value,
+    numeroDocumento: $('numeroDocumento').value.trim(),
+    nombres: $('nombres').value.trim(),
+    apellidos: $('apellidos').value.trim(),
+    telefono: $('telefono').value.trim() || null,
+    correo: $('correo').value.trim() || null,
+    residente: $('residente').checked
+  };
+  try {
+    if (eraEdicion) await api(API + '/' + editando.id, { method: 'PUT', body: JSON.stringify(body) });
+    else await api(API, { method: 'POST', body: JSON.stringify(body) });
+    $('dlgForm').close();
+    aviso(eraEdicion ? 'Datos de contacto actualizados.' : 'Integrante creado.');
+    await cargar();
+  } catch (err) {
+    $('errorForm').textContent = err.message;
+    $('errorForm').hidden = false;
+  }
+});
+
+$('formMotivo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const motivo = $('motivoTxt').value.trim();
+  if (!motivo) {
+    $('errorMotivo').textContent = 'El motivo es obligatorio.';
+    $('errorMotivo').hidden = false;
+    return;
+  }
+  try {
+    await api(API + '/' + desactivando.id + '/desactivar?motivo=' + encodeURIComponent(motivo), { method: 'PATCH' });
+    $('dlgMotivo').close();
+    aviso('Integrante desactivado.');
+    await cargar();
+  } catch (err) {
+    $('errorMotivo').textContent = err.message;
+    $('errorMotivo').hidden = false;
+  }
+});
+
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.editar) abrirForm(buscarIntegrante(b.dataset.editar));
+  if (b.dataset.desactivar) {
+    desactivando = buscarIntegrante(b.dataset.desactivar);
+    $('motivoNombre').textContent = desactivando.nombres + ' ' + desactivando.apellidos;
+    $('motivoTxt').value = '';
+    $('errorMotivo').hidden = true;
+    $('dlgMotivo').showModal();
+  }
+});
+
+document.querySelectorAll('[data-cerrar]').forEach(b => {
+  b.addEventListener('click', () => $(b.dataset.cerrar).close());
+});
+['fRol', 'fEstado'].forEach(id => $(id).addEventListener('change', pintar));
+$('fTexto').addEventListener('input', pintar);
+$('btnNuevo').addEventListener('click', () => abrirForm(null));
+
+cargar();
+</script>
+</body>
+</html>

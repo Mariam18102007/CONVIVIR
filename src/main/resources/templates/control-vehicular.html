@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Control vehicular')}"></head>
+<body>
+<style>
+  h2.sub { font-size: 1.1rem; margin: 26px 0 10px; }
+  .buscador { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+  .buscador label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--texto-suave); }
+  .buscador input { padding: 8px 10px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; text-transform: uppercase; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .acciones { white-space: normal; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Control vehicular</h1>
+      <p>Consulta un vehículo por su placa y registra su ingreso y salida.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <h2 class="sub">1. Buscar por placa</h2>
+    <div class="buscador">
+      <label>Placa
+        <input id="bPlaca" maxlength="8" placeholder="ABC123">
+      </label>
+      <button class="btn primario" id="btnBuscar" type="button">Buscar</button>
+    </div>
+    <div id="resultado"></div>
+
+    <h2 class="sub">2. Parqueaderos de visitantes</h2>
+    <p class="nota" id="resumenVis"></p>
+    <div class="chips" id="chipsVis"></div>
+
+    <h2 class="sub">3. Vehículos dentro del conjunto</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Placa</th><th>Vehículo</th><th>Inmueble</th><th>Parqueadero</th>
+            <th>Ingresó</th><th>Registró</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="dentro"></tbody>
+      </table>
+    </div>
+
+    <h2 class="sub">4. Parqueaderos: titular y uso vigente</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Parqueadero</th><th>Titular</th><th>Uso vigente</th><th>Ahora</th></tr>
+        </thead>
+        <tbody id="parqueaderos"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const TIPOS = { AUTOMOVIL: 'Automóvil', CAMIONETA: 'Camioneta', MOTOCICLETA: 'Motocicleta', OTRO: 'Otro' };
+let dentro = [], parqueaderos = [], visitantes = { total: 0, ocupados: 0, disponibles: 0, parqueaderos: [] };
+let inmuebles = [], encontrado = null, placaBuscada = '', temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = s => s ? String(s).replace('T', ' ').substring(0, 16) : '—';
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar: el vehículo ya está dentro o el parqueadero está ocupado.',
+      500: 'No se pudo guardar.'
+    };
+    const err = new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+    err.estado = r.status;
+    throw err;
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+const idsVisitantes = () => new Set(visitantes.parqueaderos.map(p => p.id));
+const ocupadoPor = id => dentro.find(m => m.parqueaderoId === id);
+
+/* ---------- Carga ---------- */
+async function cargarTodo() {
+  try {
+    const r = await Promise.all([
+      api('/api/porteria/vehiculos/dentro'),
+      api('/api/porteria/parqueaderos-visitantes'),
+      api('/api/porteria/parqueaderos')
+    ]);
+    dentro = r[0];
+    visitantes = r[1];
+    parqueaderos = r[2];
+    pintarDentro();
+    pintarVisitantes();
+    pintarParqueaderos();
+  } catch (e) { aviso(e.message, true); }
+}
+
+function pintarDentro() {
+  if (!dentro.length) {
+    $('dentro').innerHTML = '<tr><td colspan="7" class="vacio">No hay vehículos dentro en este momento.</td></tr>';
+    return;
+  }
+  $('dentro').innerHTML = dentro.map(m => `
+    <tr>
+      <td><strong>${esc(m.placa)}</strong></td>
+      <td>${m.visitante ? '<span class="chip">Visitante</span>' : esc(m.vehiculo)}</td>
+      <td>${esc(m.inmueble)}</td>
+      <td>${m.parqueadero ? esc(m.parqueadero) : '—'}</td>
+      <td>${esc(fmt(m.ingresoEn))}</td>
+      <td>${esc(m.vigilanteIngreso)}</td>
+      <td class="acciones"><button class="btn" data-salida="${m.id}">Registrar salida</button></td>
+    </tr>`).join('');
+}
+
+function pintarVisitantes() {
+  if (!visitantes.total) {
+    $('resumenVis').textContent = 'No hay parqueaderos de visitantes registrados.';
+    $('chipsVis').innerHTML = '';
+    return;
+  }
+  $('resumenVis').textContent = visitantes.disponibles + ' libres de ' + visitantes.total + ' parqueaderos de visitantes.';
+  $('chipsVis').innerHTML = visitantes.parqueaderos.map(p =>
+    `<span class="chip ${p.ocupado ? 'off' : 'ok'}">${esc(p.identificacion)} — ${p.ocupado ? 'ocupado' : 'libre'}</span>`).join('');
+}
+
+function pintarParqueaderos() {
+  if (!parqueaderos.length) {
+    $('parqueaderos').innerHTML = '<tr><td colspan="4" class="vacio">No hay parqueaderos registrados.</td></tr>';
+    return;
+  }
+  const visitantesIds = idsVisitantes();
+  $('parqueaderos').innerHTML = parqueaderos.map(p => {
+    const oc = ocupadoPor(p.id);
+    return `
+    <tr>
+      <td><strong>${esc(p.identificacion)}</strong>${visitantesIds.has(p.id) ? ' <span class="chip">Visitantes</span>' : ''}</td>
+      <td>${p.titular ? esc(p.titular) : '—'}</td>
+      <td>${p.usoVigente ? esc(p.usoVigente) : '—'}</td>
+      <td>${oc ? '<span class="chip off">Ocupado · ' + esc(oc.placa) + '</span>' : '<span class="chip ok">Libre</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+$('dentro').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.salida) return;
+  try {
+    await api('/api/porteria/vehiculos/ingresos/' + b.dataset.salida + '/salida', { method: 'PATCH' });
+    aviso('Salida registrada.');
+    await cargarTodo();
+    if (placaBuscada) await buscar();
+  } catch (err) { aviso(err.message, true); }
+});
+
+/* ---------- Buscar por placa ---------- */
+async function buscar() {
+  const placa = $('bPlaca').value.trim();
+  if (!placa) { aviso('Escribe una placa.', true); return; }
+  placaBuscada = placa;
+  encontrado = null;
+  try {
+    encontrado = await api('/api/porteria/vehiculos?placa=' + encodeURIComponent(placa));
+    mostrarEncontrado();
+  } catch (e) {
+    if (e.estado === 404) { await mostrarNoRegistrado(placa); }
+    else { $('resultado').innerHTML = ''; aviso(e.message, true); }
+  }
+}
+
+function mostrarEncontrado() {
+  const v = encontrado;
+  const visitantesIds = idsVisitantes();
+  const opciones = parqueaderos.filter(p => !visitantesIds.has(p.id)).map(p => {
+    const oc = ocupadoPor(p.id);
+    return `<option value="${p.id}" ${oc ? 'disabled' : ''}>${esc(p.identificacion)} — uso vigente: ${esc(p.usoVigente || 'sin asignar')}${oc ? ' (ocupado)' : ''}</option>`;
+  }).join('');
+  $('resultado').innerHTML = `
+    <div class="tarjeta" style="max-width:680px">
+      <h2>${esc(v.placa)} <span class="chip ${v.dentro ? 'ok' : ''}">${v.dentro ? 'Dentro' : 'Fuera'}</span></h2>
+      <p>${esc(TIPOS[v.tipo] || v.tipo)} ${esc(v.marca)} ${esc(v.color)} · Inmueble: <strong>${esc(v.inmueble)}</strong></p>
+      ${v.dentro
+        ? '<p class="nota" style="margin-top:10px">Ya está dentro del conjunto. Registra su salida en la tabla de abajo.</p>'
+        : `<div class="campo" style="margin-top:12px">
+             <label for="rParq">Parqueadero que ocupa (opcional)</label>
+             <select id="rParq"><option value="">Sin parqueadero</option>${opciones}</select>
+           </div>
+           <div class="msg-error" id="errorRes" hidden></div>
+           <button class="btn primario" data-accion="ingreso-residente" type="button">Registrar ingreso</button>`}
+    </div>`;
+}
+
+async function mostrarNoRegistrado(placa) {
+  if (!inmuebles.length) {
+    try { inmuebles = await api('/api/inmuebles?activo=true'); } catch (e) { inmuebles = []; }
+  }
+  const libres = visitantes.parqueaderos.filter(p => !p.ocupado);
+  $('resultado').innerHTML = `
+    <div class="tarjeta" style="max-width:680px">
+      <h2>${esc(placa.toUpperCase())} <span class="chip off">No registrado</span></h2>
+      <p>No hay un vehículo activo con esa placa. Si es un visitante, registra su ingreso:</p>
+      <div class="campo" style="margin-top:12px">
+        <label for="vInmueble">Inmueble que visita</label>
+        <select id="vInmueble"><option value="">Seleccione...</option>
+          ${inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="vParq">Parqueadero de visitantes (opcional)</label>
+        <select id="vParq"><option value="">Sin parqueadero</option>
+          ${libres.map(p => `<option value="${p.id}">${esc(p.identificacion)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="msg-error" id="errorRes" hidden></div>
+      <button class="btn primario" data-accion="ingreso-visitante" type="button">Registrar ingreso de visitante</button>
+    </div>`;
+}
+
+$('resultado').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.accion) return;
+  const body = {};
+  if (b.dataset.accion === 'ingreso-residente') {
+    body.placa = encontrado.placa;
+    if ($('rParq').value) body.parqueaderoId = Number($('rParq').value);
+  } else {
+    if (!$('vInmueble').value) {
+      $('errorRes').textContent = 'Elige el inmueble que visita.';
+      $('errorRes').hidden = false;
+      return;
+    }
+    body.placa = placaBuscada;
+    body.inmuebleId = Number($('vInmueble').value);
+    if ($('vParq').value) body.parqueaderoId = Number($('vParq').value);
+  }
+  try {
+    await api('/api/porteria/vehiculos/ingresos', { method: 'POST', body: JSON.stringify(body) });
+    aviso('Ingreso registrado.');
+    $('resultado').innerHTML = '';
+    $('bPlaca').value = '';
+    placaBuscada = '';
+    await cargarTodo();
+  } catch (err) {
+    $('errorRes').textContent = err.message;
+    $('errorRes').hidden = false;
+  }
+});
+
+$('btnBuscar').addEventListener('click', buscar);
+$('bPlaca').addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });
+
+cargarTodo();
+</script>
+</body>
+</html>

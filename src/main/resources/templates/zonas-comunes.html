@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Zonas comunes')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  .num { text-align: right; white-space: nowrap; }
+  h2.sub { font-size: 1.1rem; margin: 28px 0 10px; }
+  .tarjeta { margin-bottom: 18px; }
+  .resultado { border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+  .resultado.ok { background: #e4f6ea; color: #14532d; }
+  .resultado.mal { background: #fde8e8; color: #7f1d1d; }
+  .resultado ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Zonas comunes</h1>
+      <p>Consulta la disponibilidad, solicita una reserva y revisa el estado de las tuyas.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="tarjeta">
+      <h2>Solicitar una reserva</h2>
+      <p class="nota" id="sinVinculo" hidden>Para reservar necesitas una vinculación residente vigente
+        (propietario residente, arrendatario o residente autorizado).</p>
+      <p class="nota" id="sinZonas" hidden>Todavía no hay zonas comunes habilitadas para reservar.</p>
+
+      <form id="formReserva">
+        <div class="campo">
+          <label for="zona">Zona común</label>
+          <select id="zona" required></select>
+          <p class="nota" id="infoZona" style="margin:6px 0 0"></p>
+        </div>
+        <div class="dos">
+          <div class="campo">
+            <label for="fecha">Fecha</label>
+            <input id="fecha" type="date" required>
+          </div>
+          <div class="campo">
+            <label for="inmueble">Inmueble al que se cobra</label>
+            <select id="inmueble" required></select>
+          </div>
+        </div>
+        <div class="dos">
+          <div class="campo">
+            <label for="desde">Desde</label>
+            <input id="desde" type="time" required>
+          </div>
+          <div class="campo">
+            <label for="hasta">Hasta</label>
+            <input id="hasta" type="time" required>
+          </div>
+        </div>
+        <div class="campo">
+          <label for="finalidad">Finalidad</label>
+          <input id="finalidad" required maxlength="200" placeholder="Ej.: Cumpleaños familiar">
+        </div>
+
+        <div id="resultado" class="resultado" hidden></div>
+
+        <p class="nota">La administración debe confirmar la reserva. Al confirmarla se genera el cobro del alquiler,
+          que aparece en las obligaciones del inmueble elegido.</p>
+        <div class="botones">
+          <button type="button" class="btn" id="btnConsultar">Consultar disponibilidad</button>
+          <button type="submit" class="btn primario" id="btnSolicitar">Solicitar reserva</button>
+        </div>
+      </form>
+    </section>
+
+    <h2 class="sub">Mis reservas</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>N.°</th><th>Zona</th><th>Fecha y horario</th><th>Inmueble</th>
+            <th class="num">Valor</th><th>Estado</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Cancelar -->
+<dialog id="dlgCancelar">
+  <h2>Cancelar reserva</h2>
+  <form id="formCancelar">
+    <p class="nota" id="cancelarDetalle"></p>
+    <div class="campo">
+      <label for="motivo">Motivo (obligatorio)</label>
+      <input id="motivo" required maxlength="150" placeholder="Cambió el plan...">
+    </div>
+    <div class="msg-error" id="errorCancelar" hidden></div>
+    <div class="botones">
+      <button type="button" class="btn" id="btnNoCancelar">Volver</button>
+      <button type="submit" class="btn peligro">Cancelar reserva</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+let zonas = [], misInmuebles = [], lista = [], objetivo = null, temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dinero = n => COP.format(n);
+const hh = d => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+const hoyTexto = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const franja = (ini, fin) => {
+  const a = new Date(ini), b = new Date(fin);
+  return a.toLocaleDateString('es-CO') + ' · ' + hh(a) + ' a ' + hh(b);
+};
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos: hay campos obligatorios sin llenar o no válidos.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo completar la operación.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+/* ---------- Formulario ---------- */
+function zonaElegida() { return zonas.find(z => String(z.id) === $('zona').value); }
+
+function pintarInfoZona() {
+  const z = zonaElegida();
+  $('infoZona').textContent = z
+    ? z.unidadEtiqueta + ' · ' + dinero(z.tarifa) + ' · Horario ' + z.horaApertura + ' a ' + z.horaCierre
+    : '';
+  $('resultado').hidden = true;
+}
+
+function datosPeriodo() {
+  const f = $('fecha').value, d = $('desde').value, h = $('hasta').value;
+  if (!$('zona').value || !f || !d || !h) return null;
+  return { inicio: f + 'T' + d + ':00', fin: f + 'T' + h + ':00' };
+}
+
+function mostrarResultado(r) {
+  const el = $('resultado');
+  const ocupadas = r.ocupadas && r.ocupadas.length
+    ? '<p style="margin:8px 0 0">Horarios ya reservados ese día:</p><ul>' +
+      r.ocupadas.map(o => '<li>' + hh(new Date(o.inicio)) + ' a ' + hh(new Date(o.fin)) + '</li>').join('') + '</ul>'
+    : '';
+  if (r.disponible) {
+    el.className = 'resultado ok';
+    el.innerHTML = '<strong>Disponible.</strong> Valor estimado: ' + dinero(r.valor) +
+      ' (' + r.unidades + ' × ' + dinero(r.tarifa) + ', ' + esc(r.unidad.toLowerCase()) + ').' + ocupadas;
+  } else {
+    el.className = 'resultado mal';
+    el.innerHTML = '<strong>No disponible.</strong> ' + esc(r.motivo) + ocupadas;
+  }
+  el.hidden = false;
+}
+
+$('zona').addEventListener('change', pintarInfoZona);
+
+$('btnConsultar').addEventListener('click', async () => {
+  const p = datosPeriodo();
+  if (!p) { aviso('Elige la zona, la fecha y el horario.', true); return; }
+  const q = new URLSearchParams({ zonaId: $('zona').value, inicio: p.inicio, fin: p.fin });
+  try { mostrarResultado(await api('/api/reservas/disponibilidad?' + q.toString())); }
+  catch (e) { aviso(e.message, true); }
+});
+
+$('formReserva').addEventListener('submit', async e => {
+  e.preventDefault();
+  const p = datosPeriodo();
+  if (!p) { aviso('Elige la zona, la fecha y el horario.', true); return; }
+  try {
+    await api('/api/reservas', {
+      method: 'POST',
+      body: JSON.stringify({
+        zonaId: Number($('zona').value),
+        inmuebleId: Number($('inmueble').value),
+        inicio: p.inicio,
+        fin: p.fin,
+        finalidad: $('finalidad').value.trim()
+      })
+    });
+    aviso('Reserva solicitada. La administración la confirmará.');
+    $('finalidad').value = '';
+    $('resultado').hidden = true;
+    await cargarReservas();
+  } catch (err) { aviso(err.message, true); }
+});
+
+/* ---------- Mis reservas ---------- */
+const ESTADOS = { SOLICITADA: ['warn', 'Solicitada'], CONFIRMADA: ['ok', 'Confirmada'],
+                  FINALIZADA: ['', 'Finalizada'], RECHAZADA: ['off', 'Rechazada'], CANCELADA: ['off', 'Cancelada'] };
+
+async function cargarReservas() {
+  try {
+    lista = await api('/api/reservas/mias');
+    if (!lista.length) {
+      $('filas').innerHTML = '<tr><td colspan="7" class="vacio">Todavía no has solicitado reservas.</td></tr>';
+      return;
+    }
+    $('filas').innerHTML = lista.map(r => {
+      const e = ESTADOS[r.estado] || ['', r.estado];
+      return `
+      <tr>
+        <td><strong>#${r.id}</strong></td>
+        <td>${esc(r.zona)}<br><span class="nota" style="margin:0">${esc(r.finalidad)}</span></td>
+        <td>${esc(franja(r.inicio, r.fin))}</td>
+        <td>${esc(r.inmueble)}</td>
+        <td class="num">${dinero(r.valor)}</td>
+        <td><span class="chip ${e[0]}">${e[1]}</span>
+          ${r.motivo ? '<br><span class="nota" style="margin:0">' + esc(r.motivo) + '</span>' : ''}
+          ${r.multaId ? '<br><span class="nota" style="margin:0">Multa: ' + dinero(r.multaValor) + '</span>' : ''}</td>
+        <td class="acciones">${r.cancelable ? `<button class="btn" data-cancelar="${r.id}">Cancelar</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="7" class="vacio">No se pudieron cargar tus reservas.</td></tr>';
+    aviso(e.message, true);
+  }
+}
+
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-cancelar]');
+  if (!b) return;
+  objetivo = lista.find(r => String(r.id) === b.dataset.cancelar);
+  $('cancelarDetalle').textContent = '#' + objetivo.id + ' · ' + objetivo.zona + ' · ' + franja(objetivo.inicio, objetivo.fin);
+  $('motivo').value = '';
+  $('errorCancelar').hidden = true;
+  $('dlgCancelar').showModal();
+});
+$('btnNoCancelar').addEventListener('click', () => $('dlgCancelar').close());
+
+$('formCancelar').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/reservas/' + objetivo.id + '/cancelar?motivo=' + encodeURIComponent($('motivo').value.trim()),
+      { method: 'PATCH' });
+    $('dlgCancelar').close();
+    aviso('Reserva cancelada.');
+    await cargarReservas();
+  } catch (err) {
+    $('errorCancelar').textContent = err.message;
+    $('errorCancelar').hidden = false;
+  }
+});
+
+/* ---------- Inicio ---------- */
+(async () => {
+  $('fecha').min = hoyTexto();
+  try {
+    zonas = await api('/api/reservas/zonas');
+    misInmuebles = await api('/api/reservas/mis-inmuebles');
+  } catch (e) { aviso(e.message, true); }
+
+  $('zona').innerHTML = zonas.map(z => `<option value="${z.id}">${esc(z.nombre)}</option>`).join('');
+  $('inmueble').innerHTML = misInmuebles.map(i =>
+    `<option value="${i.id}">${esc(i.identificacion)} (${esc(i.vinculo)})</option>`).join('');
+  pintarInfoZona();
+
+  const bloqueado = !zonas.length || !misInmuebles.length;
+  $('sinZonas').hidden = zonas.length > 0;
+  $('sinVinculo').hidden = misInmuebles.length > 0;
+  $('btnSolicitar').disabled = bloqueado;
+  $('btnConsultar').disabled = bloqueado;
+  await cargarReservas();
+})();
+</script>
+</body>
+</html>

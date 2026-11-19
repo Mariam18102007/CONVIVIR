@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Historial de accesos')}"></head>
+<body>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Historial de accesos</h1>
+      <p>Entradas y salidas registradas en portería, con el vigilante responsable.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="filtros">
+      <label>Inmueble
+        <select id="fInmueble"><option value="">Todos</option></select>
+      </label>
+      <label>Desde
+        <input type="date" id="fDesde">
+      </label>
+      <label>Hasta
+        <input type="date" id="fHasta">
+      </label>
+    </section>
+
+    <p class="nota" id="resumen"></p>
+
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Ingreso</th><th>Salida</th><th>Persona</th><th>Tipo</th><th>Documento</th>
+            <th>Inmueble</th><th>Placa</th><th>Vigilante</th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+let lista = [], temporizador = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = s => s ? String(s).replace('T', ' ').substring(0, 16) : '—';
+const fecha = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function api(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('No se pudo cargar (error ' + r.status + ').'));
+  }
+  return r.json();
+}
+
+function aviso(msg) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = 'aviso error';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+async function cargar() {
+  const p = new URLSearchParams();
+  if ($('fInmueble').value) p.set('inmuebleId', $('fInmueble').value);
+  if ($('fDesde').value) p.set('desde', $('fDesde').value);
+  if ($('fHasta').value) p.set('hasta', $('fHasta').value);
+  try {
+    lista = await api('/api/accesos/historial?' + p.toString());
+    pintar();
+  } catch (e) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No se pudo cargar el historial.</td></tr>';
+    aviso(e.message);
+  }
+}
+
+function pintar() {
+  $('resumen').textContent = lista.length + ' movimiento(s) en el periodo.';
+  if (!lista.length) {
+    $('filas').innerHTML = '<tr><td colspan="8" class="vacio">No hay movimientos para estos filtros.</td></tr>';
+    return;
+  }
+  $('filas').innerHTML = lista.map(m => `
+    <tr>
+      <td>${esc(fmt(m.ingresoEn))}</td>
+      <td>${m.salidaEn ? esc(fmt(m.salidaEn)) : '<span class="chip ok">Dentro</span>'}</td>
+      <td><strong>${esc(m.nombre)}</strong>${m.motivo ? '<br><small>' + esc(m.motivo) + '</small>' : ''}</td>
+      <td>${esc(m.tipo === 'OCASIONAL' ? 'Visita' : (m.tipo === 'RECURRENTE' ? 'Recurrente' : m.tipo))}</td>
+      <td>${esc(m.documento)}</td>
+      <td>${esc(m.inmueble)}</td>
+      <td>${esc(m.placa)}</td>
+      <td>${esc(m.vigilanteIngreso)}${m.vigilanteSalida && m.vigilanteSalida !== m.vigilanteIngreso
+        ? '<br><small>Salida: ' + esc(m.vigilanteSalida) + '</small>' : ''}</td>
+    </tr>`).join('');
+}
+
+['fInmueble', 'fDesde', 'fHasta'].forEach(id => $(id).addEventListener('change', cargar));
+
+(async () => {
+  const fin = new Date(), ini = new Date();
+  ini.setDate(ini.getDate() - 30);
+  $('fHasta').value = fecha(fin);
+  $('fDesde').value = fecha(ini);
+  try {
+    const inmuebles = await api('/api/inmuebles');
+    $('fInmueble').innerHTML = '<option value="">Todos</option>' +
+      inmuebles.map(i => `<option value="${i.id}">${esc(i.identificacion)}</option>`).join('');
+  } catch (e) { aviso(e.message); }
+  cargar();
+})();
+</script>
+</body>
+</html>
