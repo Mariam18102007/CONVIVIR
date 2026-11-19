@@ -24,12 +24,6 @@ public final class ModulosPendientes {
         return Map.entry(ruta, new Modulo(titulo, casoUso, quien, descripcion, List.of(funciones)));
     }
 
-    private static final Map<String, Modulo> POR_RUTA = Map.ofEntries(
-
-        // ---------- Propietario, arrendatario y residente autorizado ----------
-        e("/mis-inmuebles", "Mi inmueble", "RF-026", "Propietario, arrendatario y residente autorizado",
-            "Consultar tus vinculaciones vigentes y la información permitida por tu vínculo.",
-            "RF-026 Consultar tus propias vinculaciones vigentes",
-            "RN-07 Solo ves la información de los inmuebles a los que estás vinculado")
-    );
+    // Hoy no queda ningún módulo pendiente.
+    private static final Map<String, Modulo> POR_RUTA = Map.of();
 }

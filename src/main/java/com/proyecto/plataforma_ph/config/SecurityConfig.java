@@ -30,6 +30,9 @@ public class SecurityConfig {
                 .requestMatchers("/login", "/recuperar", "/restablecer", "/css/**").permitAll()
                 // RF-003: cualquier usuario con sesión gestiona su propia cuenta.
                 .requestMatchers("/api/cuenta/**").authenticated()
+                // RF-026: cada residente consulta sus propias vinculaciones (el controlador filtra por usuario).
+                .requestMatchers(HttpMethod.GET, "/api/mis-inmuebles")
+                    .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
                 // CU-05 y CU-06: visitas y autorizaciones de los residentes.
                 .requestMatchers("/api/visitas/**", "/api/autorizaciones/**")
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO")

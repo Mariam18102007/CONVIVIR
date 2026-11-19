@@ -176,6 +176,12 @@ public class InicioController {
         return "zonas-comunes";
     }
 
+    // Mi inmueble: vinculaciones vigentes propias (RF-026).
+    @GetMapping("/mis-inmuebles")
+    public String misInmuebles() {
+        return "mis-inmuebles";
+    }
+
     // Bandeja de avisos de propietarios, arrendatarios y residentes autorizados.
     @GetMapping("/mis-notificaciones")
     public String misNotificaciones() {

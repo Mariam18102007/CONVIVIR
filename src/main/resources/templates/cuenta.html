@@ -19,9 +19,33 @@
       <h2>Tus datos</h2>
       <p>Usuario: <strong th:text="${usuario}">usuario</strong></p>
       <p>Rol: <strong th:text="${rol}">Rol</strong></p>
-      <p class="nota" style="margin-top:10px">
-        Modificar nombre, teléfono y correo (RF-005): próximamente.
-      </p>
+    </section>
+
+    <section class="tarjeta bloque">
+      <h2>Datos de contacto</h2>
+      <div id="avisoPerfil" class="aviso" hidden></div>
+      <form id="formPerfil">
+        <div class="campo">
+          <label for="nombres">Nombres</label>
+          <input id="nombres" type="text" required maxlength="100" autocomplete="given-name">
+        </div>
+        <div class="campo">
+          <label for="apellidos">Apellidos</label>
+          <input id="apellidos" type="text" required maxlength="100" autocomplete="family-name">
+        </div>
+        <div class="campo">
+          <label for="telefono">Teléfono</label>
+          <input id="telefono" type="tel" maxlength="20" autocomplete="tel">
+        </div>
+        <div class="campo">
+          <label for="correoContacto">Correo de contacto</label>
+          <input id="correoContacto" type="email" autocomplete="email">
+        </div>
+        <p class="nota">Tu usuario para iniciar sesión no cambia.</p>
+        <div class="botones">
+          <button type="submit" class="btn primario">Guardar datos</button>
+        </div>
+      </form>
     </section>
 
     <section class="tarjeta bloque">
@@ -57,6 +81,55 @@ function aviso(msg, error) {
   el.className = error ? 'aviso error' : 'aviso';
   el.hidden = false;
 }
+
+function avisoPerfil(msg, error) {
+  const el = $('avisoPerfil');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+}
+
+async function cargarPerfil() {
+  try {
+    const r = await fetch('/api/cuenta/perfil');
+    if (r.status === 401) { location.href = '/login'; return; }
+    if (!r.ok) { avisoPerfil('No se pudieron cargar tus datos.', true); return; }
+    const p = await r.json();
+    $('nombres').value = p.nombres || '';
+    $('apellidos').value = p.apellidos || '';
+    $('telefono').value = p.telefono || '';
+    $('correoContacto').value = p.correo || '';
+  } catch (err) {
+    avisoPerfil('No se pudo conectar con el servidor.', true);
+  }
+}
+
+$('formPerfil').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('avisoPerfil').hidden = true;
+  try {
+    const r = await fetch('/api/cuenta/perfil', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombres: $('nombres').value, apellidos: $('apellidos').value,
+        telefono: $('telefono').value, correo: $('correoContacto').value
+      })
+    });
+    if (r.status === 401) { location.href = '/login'; return; }
+    if (!r.ok) {
+      let msg = '';
+      try { msg = (await r.json()).message || ''; } catch (x) { /* sin cuerpo */ }
+      avisoPerfil(msg || 'No se pudieron guardar los datos.', true);
+      return;
+    }
+    avisoPerfil('Datos actualizados.');
+  } catch (err) {
+    avisoPerfil('No se pudo conectar con el servidor.', true);
+  }
+});
+
+cargarPerfil();
 
 $('form').addEventListener('submit', async e => {
   e.preventDefault();

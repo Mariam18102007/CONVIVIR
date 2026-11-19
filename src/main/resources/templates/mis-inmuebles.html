@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Mi inmueble')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Mi inmueble</h1>
+      <p>Los inmuebles a los que estás vinculado actualmente y el tipo de vínculo.</p>
+    </header>
+
+    <div id="aviso" class="aviso error" hidden></div>
+    <p id="vacio" class="nota" hidden>No tienes vinculaciones vigentes. Si crees que es un error, comunícate con la administración.</p>
+
+    <div class="tabla-scroll" id="contenedor" hidden>
+      <table class="tabla">
+        <thead>
+          <tr><th>Inmueble</th><th>Naturaleza</th><th>Tipo</th><th>Tu vínculo</th><th>Desde</th></tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const VINCULOS = {
+  PROPIETARIO_RESIDENTE: 'Propietario residente',
+  PROPIETARIO_NO_RESIDENTE: 'Propietario no residente',
+  ARRENDATARIO: 'Arrendatario',
+  RESIDENTE_AUTORIZADO: 'Residente autorizado'
+};
+const NATURALEZAS = {
+  BIEN_PRIVADO: 'Bien privado',
+  BIEN_COMUN_USO_EXCLUSIVO: 'Bien común de uso exclusivo',
+  BIEN_COMUN_USO_GENERAL: 'Bien común de uso general'
+};
+
+function celda(texto) {
+  const td = document.createElement('td');
+  td.textContent = texto;
+  return td;
+}
+
+async function cargar() {
+  try {
+    const r = await fetch('/api/mis-inmuebles');
+    if (r.status === 401) { location.href = '/login'; return; }
+    if (!r.ok) throw new Error();
+    const lista = await r.json();
+    if (lista.length === 0) { document.getElementById('vacio').hidden = false; return; }
+    const filas = document.getElementById('filas');
+    lista.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.appendChild(celda(m.identificacion));
+      tr.appendChild(celda(NATURALEZAS[m.naturaleza] || m.naturaleza));
+      tr.appendChild(celda(m.tipoInmueble));
+      tr.appendChild(celda(VINCULOS[m.tipoVinculo] || m.tipoVinculo));
+      tr.appendChild(celda(m.fechaInicio || ''));
+      filas.appendChild(tr);
+    });
+    document.getElementById('contenedor').hidden = false;
+  } catch (e) {
+    const a = document.getElementById('aviso');
+    a.textContent = 'No se pudo cargar tu información.';
+    a.hidden = false;
+  }
+}
+cargar();
+</script>
+</body>
+</html>
