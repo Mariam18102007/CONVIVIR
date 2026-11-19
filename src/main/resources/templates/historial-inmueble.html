@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Historial de inmueble')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .seccion { margin-top: 22px; }
+  .seccion h2 { margin-bottom: 8px; }
+  .selector { max-width: 420px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Historial de inmueble</h1>
+      <p>Vinculaciones, obligaciones, pagos, reportes y accesos de una unidad, de lo más reciente a lo más antiguo (hasta 200 por sección).</p>
+    </header>
+
+    <div id="aviso" class="aviso error" hidden></div>
+
+    <div class="campo selector">
+      <label for="inmueble">Inmueble</label>
+      <select id="inmueble"><option value="">Selecciona un inmueble…</option></select>
+    </div>
+
+    <div id="resultado" hidden>
+      <section class="seccion"><h2>Vinculaciones</h2><div id="t-vinculaciones"></div></section>
+      <section class="seccion"><h2>Obligaciones</h2><div id="t-obligaciones"></div></section>
+      <section class="seccion"><h2>Pagos</h2><div id="t-pagos"></div></section>
+      <section class="seccion"><h2>Reportes</h2><div id="t-reportes"></div></section>
+      <section class="seccion"><h2>Accesos</h2><div id="t-accesos"></div></section>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function aviso(msg) { const a = $('aviso'); a.textContent = msg; a.hidden = !msg; }
+
+function fecha(v) { return v ? String(v).replace('T', ' ').substring(0, 16) : ''; }
+function dinero(v) { return '$' + Number(v).toLocaleString('es-CO'); }
+
+function tabla(contenedor, columnas, filas) {
+  const el = $(contenedor);
+  el.textContent = '';
+  if (filas.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'nota';
+    p.textContent = 'Sin registros.';
+    el.appendChild(p);
+    return;
+  }
+  const scroll = document.createElement('div');
+  scroll.className = 'tabla-scroll';
+  const t = document.createElement('table');
+  t.className = 'tabla';
+  const cab = document.createElement('tr');
+  columnas.forEach(c => { const th = document.createElement('th'); th.textContent = c; cab.appendChild(th); });
+  const thead = document.createElement('thead');
+  thead.appendChild(cab);
+  t.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  filas.forEach(f => {
+    const tr = document.createElement('tr');
+    f.forEach(v => { const td = document.createElement('td'); td.textContent = v == null ? '' : v; tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);
+  scroll.appendChild(t);
+  el.appendChild(scroll);
+}
+
+async function pedir(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { location.href = '/login'; throw new Error('sesion'); }
+  if (!r.ok) throw new Error('error');
+  return r.json();
+}
+
+async function cargarInmuebles() {
+  try {
+    const lista = await pedir('/api/inmuebles');
+    lista.forEach(i => {
+      const o = document.createElement('option');
+      o.value = i.id;
+      o.textContent = i.identificacion + (i.activo ? '' : ' (inactivo)');
+      $('inmueble').appendChild(o);
+    });
+  } catch (e) { aviso('No se pudo cargar la lista de inmuebles.'); }
+}
+
+$('inmueble').addEventListener('change', async () => {
+  aviso('');
+  const id = $('inmueble').value;
+  $('resultado').hidden = true;
+  if (!id) return;
+  try {
+    const h = await pedir('/api/inmuebles/' + id + '/historial');
+    tabla('t-vinculaciones', ['Integrante', 'Vínculo', 'Inicio', 'Fin', 'Estado'],
+      h.vinculaciones.map(v => [v.integrante, v.tipoVinculo, v.fechaInicio, v.fechaFin, v.estado]));
+    tabla('t-obligaciones', ['Concepto', 'Periodo', 'Valor', 'Saldo', 'Vence', 'Estado'],
+      h.obligaciones.map(o => [o.concepto, o.periodo, dinero(o.valor), dinero(o.saldo), o.fechaVencimiento, o.estado]));
+    tabla('t-pagos', ['N.°', 'Fecha', 'Canal', 'Medio', 'Pagador', 'Valor', 'Estado'],
+      h.pagos.map(p => [p.id, p.fecha, p.canal, p.medio, p.pagador, dinero(p.valor), p.estado]));
+    tabla('t-reportes', ['Categoría', 'Descripción', 'Estado', 'Creado', 'Cerrado'],
+      h.reportes.map(r => [r.categoria, r.descripcion, r.estado, fecha(r.creadoEn), fecha(r.cerradoEn)]));
+    tabla('t-accesos', ['Tipo', 'Nombre o placa', 'Detalle', 'Ingreso', 'Salida'],
+      h.accesos.map(a => [a.tipo === 'VEHICULO' ? 'Vehículo' : 'Persona', a.nombre, a.detalle, fecha(a.ingresoEn), fecha(a.salidaEn)]));
+    $('resultado').hidden = false;
+  } catch (e) { aviso('No se pudo cargar el historial.'); }
+});
+
+cargarInmuebles();
+</script>
+</body>
+</html>

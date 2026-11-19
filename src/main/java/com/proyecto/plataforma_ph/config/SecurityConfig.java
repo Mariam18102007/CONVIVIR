@@ -115,7 +115,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auditoria/**").hasAnyRole("ADMINISTRADOR", "MIEMBRO_CONSEJO")
 
                 // ---------- Páginas del administrador ----------
-                .requestMatchers("/inmuebles/**").hasRole("ADMINISTRADOR")
+                .requestMatchers("/inmuebles/**", "/historial-inmueble/**").hasRole("ADMINISTRADOR")
                 .requestMatchers("/tipos-inmueble/**").hasRole("ADMINISTRADOR")
                 .requestMatchers("/integrantes/**").hasRole("ADMINISTRADOR")
                 .requestMatchers("/cuentas/**").hasRole("ADMINISTRADOR")

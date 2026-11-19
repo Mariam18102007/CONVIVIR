@@ -10,6 +10,8 @@ public interface PagoRepository extends JpaRepository<Pago, Long> {
 
     List<Pago> findAllByOrderByIdDesc();
 
+    List<Pago> findByInmuebleIdOrderByIdDesc(Long inmuebleId);
+
     List<Pago> findByInmuebleIdInOrderByIdDesc(Collection<Long> inmuebleIds);
 
     Optional<Pago> findByReferencia(String referencia);

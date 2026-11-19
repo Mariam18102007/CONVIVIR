@@ -11,6 +11,8 @@ public interface ObligacionRepository extends JpaRepository<Obligacion, Long> {
 
     List<Obligacion> findAllByOrderByIdDesc();
 
+    List<Obligacion> findByInmuebleIdOrderByIdDesc(Long inmuebleId);
+
     List<Obligacion> findByInmuebleIdInOrderByIdDesc(Collection<Long> inmuebleIds);
 
     boolean existsByInmuebleIdAndConceptoAndPeriodoAndEstadoNot(

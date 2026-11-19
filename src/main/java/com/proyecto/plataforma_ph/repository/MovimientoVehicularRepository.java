@@ -9,6 +9,8 @@ public interface MovimientoVehicularRepository extends JpaRepository<MovimientoV
 
     List<MovimientoVehicular> findBySalidaEnIsNullOrderByIngresoEnDesc();
 
+    List<MovimientoVehicular> findByInmuebleIdOrderByIngresoEnDesc(Long inmuebleId);
+
     boolean existsByPlacaAndSalidaEnIsNull(String placa);
 
     boolean existsByParqueaderoIdAndSalidaEnIsNull(Long parqueaderoId);

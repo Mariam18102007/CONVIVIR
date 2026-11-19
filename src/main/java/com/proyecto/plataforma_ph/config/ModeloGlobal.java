@@ -32,6 +32,7 @@ public class ModeloGlobal {
 
         if (tieneRol(auth, "ROLE_ADMINISTRADOR")) {
             menu.add(item("Inmuebles", "/inmuebles", true, a));
+            menu.add(item("Historial de inmueble", "/historial-inmueble", true, a));
             menu.add(item("Tipos de inmueble", "/tipos-inmueble", true, a));
             menu.add(item("Integrantes", "/integrantes", true, a));
             menu.add(item("Vinculaciones", "/vinculaciones", true, a));

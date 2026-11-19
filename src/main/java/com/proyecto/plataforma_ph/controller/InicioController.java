@@ -32,6 +32,12 @@ public class InicioController {
         return "inmuebles";
     }
 
+    // Historial de un inmueble: vinculaciones, obligaciones, pagos, reportes y accesos (RF-013).
+    @GetMapping("/historial-inmueble")
+    public String historialInmueble() {
+        return "historial-inmueble";
+    }
+
     @GetMapping("/tipos-inmueble")
     public String tiposInmueble() {
         return "tipos-inmueble";

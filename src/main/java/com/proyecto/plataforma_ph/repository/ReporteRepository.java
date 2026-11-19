@@ -9,6 +9,8 @@ public interface ReporteRepository extends JpaRepository<Reporte, Long> {
 
     List<Reporte> findAllByOrderByIdDesc();
 
+    List<Reporte> findByInmuebleIdOrderByIdDesc(Long inmuebleId);
+
     List<Reporte> findByCreadorIdOrderByIdDesc(Long creadorId);
 
     List<Reporte> findByInmuebleIdInOrderByIdDesc(Collection<Long> inmuebleIds);

@@ -12,6 +12,8 @@ public interface VinculacionRepository extends JpaRepository<Vinculacion, Long> 
 
     List<Vinculacion> findByInmuebleIdAndEstado(Long inmuebleId, EstadoVinculacion estado);
 
+    List<Vinculacion> findByInmuebleIdOrderByFechaInicioDescIdDesc(Long inmuebleId);
+
     List<Vinculacion> findByIntegranteIdAndEstado(Long integranteId, EstadoVinculacion estado);
 
     List<Vinculacion> findByInmuebleIdAndEstadoAndTipoVinculoIn(

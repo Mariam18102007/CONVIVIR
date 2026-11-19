@@ -11,6 +11,8 @@ public interface MovimientoAccesoRepository extends JpaRepository<MovimientoAcce
 
     boolean existsByAutorizacionIdAndSalidaEnIsNull(Long autorizacionId);
 
+    List<MovimientoAcceso> findByInmuebleIdOrderByIngresoEnDesc(Long inmuebleId);
+
     List<MovimientoAcceso> findByIngresoEnBetweenOrderByIngresoEnDesc(LocalDateTime desde, LocalDateTime hasta);
 
     List<MovimientoAcceso> findByInmuebleIdAndIngresoEnBetweenOrderByIngresoEnDesc(
