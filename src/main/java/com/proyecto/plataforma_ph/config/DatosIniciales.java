@@ -9,11 +9,15 @@ import com.proyecto.plataforma_ph.repository.CategoriaReporteRepository;
 import com.proyecto.plataforma_ph.repository.IntegranteRepository;
 import com.proyecto.plataforma_ph.repository.TipoInmuebleRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
+import java.security.SecureRandom;
 import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -58,15 +62,44 @@ public class DatosIniciales {
         return sinTildes.toLowerCase(Locale.ROOT);
     }
 
+    // Contraseña aleatoria de 14 caracteres con mayúscula, minúscula, número y símbolo.
+    private static String generarPassword() {
+        String mayusculas = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        String minusculas = "abcdefghijkmnopqrstuvwxyz";
+        String numeros = "23456789";
+        String simbolos = "*#$%&";
+        String todo = mayusculas + minusculas + numeros;
+        SecureRandom azar = new SecureRandom();
+
+        List<Character> letras = new ArrayList<>();
+        letras.add(mayusculas.charAt(azar.nextInt(mayusculas.length())));
+        letras.add(minusculas.charAt(azar.nextInt(minusculas.length())));
+        letras.add(numeros.charAt(azar.nextInt(numeros.length())));
+        letras.add(simbolos.charAt(azar.nextInt(simbolos.length())));
+        for (int i = 0; i < 10; i++) {
+            letras.add(todo.charAt(azar.nextInt(todo.length())));
+        }
+        Collections.shuffle(letras, azar);
+
+        StringBuilder sb = new StringBuilder();
+        for (char c : letras) sb.append(c);
+        return sb.toString();
+    }
+
     @Bean
     @Order(1)
     CommandLineRunner crearAdministrador(UsuarioRepository usuarios,
                                          IntegranteRepository integrantes,
-                                         PasswordEncoder encoder) {
+                                         PasswordEncoder encoder,
+                                         @Value("${app.admin.correo:admin@ph.local}") String correo,
+                                         @Value("${app.admin.password:}") String passwordConfigurada) {
         return args -> {
             if (usuarios.count() > 0) {
                 return;
             }
+
+            boolean generada = passwordConfigurada == null || passwordConfigurada.isBlank();
+            String password = generada ? generarPassword() : passwordConfigurada;
 
             Integrante admin = integrantes.findByNumeroDocumento("1000000000")
                     .orElseGet(() -> {
@@ -76,18 +109,24 @@ public class DatosIniciales {
                         i.setNumeroDocumento("1000000000");
                         i.setNombres("Administrador");
                         i.setApellidos("Inicial");
-                        i.setCorreo("admin@ph.local");
+                        i.setCorreo(correo);
                         i.setResidente(false);
                         return integrantes.save(i);
                     });
 
             Usuario u = new Usuario();
-            u.setCorreo("admin@ph.local");
-            u.setPasswordHash(encoder.encode("Admin123*"));
+            u.setCorreo(correo);
+            u.setPasswordHash(encoder.encode(password));
             u.setIntegrante(admin);
             usuarios.save(u);
 
-            System.out.println(">>> Administrador inicial creado: admin@ph.local / Admin123*");
+            if (generada) {
+                System.out.println(">>> Administrador inicial creado: " + correo
+                        + " / " + password + "   (anótela: no se vuelve a mostrar; cámbiela en Mi cuenta)");
+            } else {
+                System.out.println(">>> Administrador inicial creado: " + correo
+                        + " (contraseña tomada de ADMIN_PASSWORD)");
+            }
         };
     }
 

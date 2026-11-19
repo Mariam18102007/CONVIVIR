@@ -3,7 +3,6 @@ package com.proyecto.plataforma_ph.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -160,9 +159,7 @@ public class SecurityConfig {
                 .passwordParameter("password")
                 .defaultSuccessUrl("/", true)
                 .failureUrl("/login?error"))
-            .logout(logout -> logout.logoutSuccessUrl("/login?logout"))
-            // Permite probar la API con usuario y contraseña desde PowerShell.
-            .httpBasic(Customizer.withDefaults());
+            .logout(logout -> logout.logoutSuccessUrl("/login?logout"));
         return http.build();
     }
 }
