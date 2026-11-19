@@ -1,0 +1,9 @@
+﻿target/
+.git/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+uploads/
+docker-data/
+.env
