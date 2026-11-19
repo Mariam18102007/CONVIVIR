@@ -5,6 +5,7 @@ import com.proyecto.plataforma_ph.pasarela.PasarelaPago;
 import com.proyecto.plataforma_ph.pasarela.PasarelaSimulada;
 import com.proyecto.plataforma_ph.repository.*;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+import com.proyecto.plataforma_ph.service.NotificacionService;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.time.LocalDate;
@@ -70,10 +71,12 @@ public class PagoController {
     private final UsuarioRepository usuarios;
     private final AuditoriaService auditoria;
     private final PasarelaPago pasarela;
+    private final NotificacionService notificaciones;
 
     public PagoController(PagoRepository pagos, ObligacionRepository obligaciones,
                           InmuebleRepository inmuebles, VinculacionRepository vinculaciones,
-                          UsuarioRepository usuarios, AuditoriaService auditoria, PasarelaPago pasarela) {
+                          UsuarioRepository usuarios, AuditoriaService auditoria, PasarelaPago pasarela,
+                          NotificacionService notificaciones) {
         this.pagos = pagos;
         this.obligaciones = obligaciones;
         this.inmuebles = inmuebles;
@@ -81,6 +84,7 @@ public class PagoController {
         this.usuarios = usuarios;
         this.auditoria = auditoria;
         this.pasarela = pasarela;
+        this.notificaciones = notificaciones;
     }
 
     // ---------- CU-12: propietario y arrendatario ----------
@@ -164,6 +168,7 @@ public class PagoController {
                 pagos.save(p);
                 auditoria.registrar("CONFIRMAR_PAGO", "Pago", p.getId(),
                         "Inmueble " + p.getInmueble().getIdentificacion() + ", valor " + total(p));
+                avisarPago(p);
             } else if (r.estado() == PasarelaPago.Estado.RECHAZADA) {
                 p.setEstado(EstadoPago.RECHAZADO);
                 p.setTransaccionId(r.transaccionId());
@@ -258,6 +263,7 @@ public class PagoController {
 
         auditoria.registrar("REGISTRAR_PAGO", "Pago", p.getId(),
                 "Inmueble " + inmueble.getIdentificacion() + ", " + body.medio() + ", valor " + total(p));
+        avisarPago(p);
         return dto(p, true);
     }
 
@@ -316,6 +322,14 @@ public class PagoController {
     }
 
     // ---------- Ayudas ----------
+
+    // CU-17: aviso de pago confirmado al obligado del pago (RN-28). Un fallo no afecta al pago.
+    private void avisarPago(Pago p) {
+        notificaciones.avisar(EventoNotificacion.PAGO_CONFIRMADO, p.getInmueble(),
+                "Pago confirmado " + numero(p),
+                "Se confirmó el pago " + numero(p) + " del inmueble "
+                        + p.getInmueble().getIdentificacion() + " por $ " + total(p) + ".");
+    }
 
     private Pago buscar(Long id) {
         return pagos.findById(id).orElseThrow(() ->

@@ -5,6 +5,7 @@ import com.proyecto.plataforma_ph.repository.AutorizacionRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
 import com.proyecto.plataforma_ph.repository.VinculacionRepository;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+import com.proyecto.plataforma_ph.service.NotificacionService;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -37,15 +38,18 @@ public class AutorizacionRecurrenteController {
     private final UsuarioRepository usuarios;
     private final VinculacionRepository vinculaciones;
     private final AuditoriaService auditoria;
+    private final NotificacionService notificaciones;
 
     public AutorizacionRecurrenteController(AutorizacionRepository autorizaciones,
                                             UsuarioRepository usuarios,
                                             VinculacionRepository vinculaciones,
-                                            AuditoriaService auditoria) {
+                                            AuditoriaService auditoria,
+                                            NotificacionService notificaciones) {
         this.autorizaciones = autorizaciones;
         this.usuarios = usuarios;
         this.vinculaciones = vinculaciones;
         this.auditoria = auditoria;
+        this.notificaciones = notificaciones;
     }
 
     // RF-038, RF-039 y RF-040
@@ -141,6 +145,11 @@ public class AutorizacionRecurrenteController {
         autorizaciones.save(a);
         auditoria.registrar("REVOCAR", "Autorizacion", a.getId(),
                 "Autorización recurrente al inmueble " + a.getInmueble().getIdentificacion());
+
+        // CU-17: aviso a los residentes del inmueble (RN-29). Un fallo no afecta a la revocación.
+        notificaciones.avisar(EventoNotificacion.AUTORIZACION_RECURRENTE, a.getInmueble(),
+                "Autorización recurrente revocada",
+                "Se revocó la autorización de " + a.getNombre() + ".");
         return aDto(a);
     }
 

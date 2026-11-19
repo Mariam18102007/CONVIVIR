@@ -6,6 +6,7 @@ import com.proyecto.plataforma_ph.repository.InmuebleRepository;
 import com.proyecto.plataforma_ph.repository.MovimientoAccesoRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+import com.proyecto.plataforma_ph.service.NotificacionService;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -47,17 +48,20 @@ public class PorteriaController {
     private final InmuebleRepository inmuebles;
     private final UsuarioRepository usuarios;
     private final AuditoriaService auditoria;
+    private final NotificacionService notificaciones;
 
     public PorteriaController(AutorizacionRepository autorizaciones,
                               MovimientoAccesoRepository movimientos,
                               InmuebleRepository inmuebles,
                               UsuarioRepository usuarios,
-                              AuditoriaService auditoria) {
+                              AuditoriaService auditoria,
+                              NotificacionService notificaciones) {
         this.autorizaciones = autorizaciones;
         this.movimientos = movimientos;
         this.inmuebles = inmuebles;
         this.usuarios = usuarios;
         this.auditoria = auditoria;
+        this.notificaciones = notificaciones;
     }
 
     // RF-031, RF-032 y RF-043: buscar autorizaciones vigentes por documento o por inmueble.
@@ -116,6 +120,15 @@ public class PorteriaController {
 
         auditoria.registrar("INGRESAR", "Acceso", m.getId(),
                 "Inmueble " + a.getInmueble().getIdentificacion());
+
+        // CU-17: aviso a los residentes del inmueble (RN-29). Un fallo no afecta al ingreso.
+        boolean ocasional = a.getTipo() == TipoAutorizacion.OCASIONAL;
+        notificaciones.avisar(
+                ocasional ? EventoNotificacion.VISITANTE_INGRESO : EventoNotificacion.AUTORIZACION_RECURRENTE,
+                a.getInmueble(),
+                ocasional ? "Ingresó su visitante" : "Ingresó un autorizado recurrente",
+                a.getNombre() + " ingresó al conjunto con destino al inmueble "
+                        + a.getInmueble().getIdentificacion() + ".");
         return aDtoAcceso(m);
     }
 

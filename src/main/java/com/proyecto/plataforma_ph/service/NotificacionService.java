@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,10 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
  * agregar después sin cambiar quién llama a este servicio (RNF-13).
  *
  * Para avisar un evento desde otro módulo:
- *   notificaciones.notificar(EventoNotificacion.PAGO_CONFIRMADO, inmueble, "Asunto", "Mensaje");
+ *   notificaciones.avisar(EventoNotificacion.PAGO_CONFIRMADO, inmueble, "Asunto", "Mensaje");
  */
 @Service
 public class NotificacionService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(NotificacionService.class);
 
     private final ConfiguracionNotificacionRepository configuraciones;
     private final NotificacionRepository notificaciones;
@@ -86,6 +90,15 @@ public class NotificacionService {
             }
         }
         return creadas;
+    }
+
+    /** Igual que notificar, pero un fallo del aviso nunca afecta a quien lo llama. */
+    public void avisar(EventoNotificacion evento, Inmueble inmueble, String asunto, String mensaje) {
+        try {
+            notificar(evento, inmueble, asunto, mensaje);
+        } catch (RuntimeException e) {
+            LOG.warn("No se pudo generar el aviso {}: {}", evento, e.getMessage());
+        }
     }
 
     private boolean aplica(DestinatarioNotificacion destino, TipoVinculo tipo) {

@@ -63,13 +63,13 @@ public class ModeloGlobal {
             menu.add(item("Reportes", "/mis-reportes", true, a));
 
         } else if (tieneRol(auth, "ROLE_RESIDENTE_AUTORIZADO")) {
-            menu.add(item("Mi inmueble", "/mis-inmuebles", false, a));
+            menu.add(item("Mi inmueble", "/mis-inmuebles", true, a));
             menu.add(item("Zonas comunes", "/zonas-comunes", true, a));
             menu.add(item("Notificaciones", "/mis-notificaciones", true, a));
 
         } else {
             // Propietario y arrendatario.
-            menu.add(item("Mi inmueble", "/mis-inmuebles", false, a));
+            menu.add(item("Mi inmueble", "/mis-inmuebles", true, a));
             menu.add(item("Visitas", "/visitas", true, a));
             menu.add(item("Autorizaciones recurrentes", "/autorizaciones", true, a));
             menu.add(item("Mis vehículos", "/mis-vehiculos", true, a));

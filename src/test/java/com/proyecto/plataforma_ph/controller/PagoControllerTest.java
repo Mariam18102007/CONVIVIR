@@ -36,6 +36,7 @@ import com.proyecto.plataforma_ph.repository.PagoRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
 import com.proyecto.plataforma_ph.repository.VinculacionRepository;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+import com.proyecto.plataforma_ph.service.NotificacionService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -81,7 +82,8 @@ class PagoControllerTest {
         usuarios = mock(UsuarioRepository.class);
         auditoria = mock(AuditoriaService.class);
         pasarela = mock(PasarelaPago.class);
-        controller = new PagoController(pagos, obligaciones, inmuebles, vinculaciones, usuarios, auditoria, pasarela);
+        controller = new PagoController(pagos, obligaciones, inmuebles, vinculaciones, usuarios,
+                auditoria, pasarela, mock(NotificacionService.class));
 
         inmueble = inmueble(10L, "Apto 101");
         otroInmueble = inmueble(20L, "Apto 202");

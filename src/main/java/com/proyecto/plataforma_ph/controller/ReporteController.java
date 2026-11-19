@@ -3,6 +3,7 @@ package com.proyecto.plataforma_ph.controller;
 import com.proyecto.plataforma_ph.model.*;
 import com.proyecto.plataforma_ph.repository.*;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+import com.proyecto.plataforma_ph.service.NotificacionService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,12 +66,14 @@ public class ReporteController {
     private final VinculacionRepository vinculaciones;
     private final UsuarioRepository usuarios;
     private final AuditoriaService auditoria;
+    private final NotificacionService notificaciones;
     private final String uploadsDir;
 
     public ReporteController(ReporteRepository reportes, CategoriaReporteRepository categorias,
                              SeguimientoReporteRepository seguimientos, InmuebleRepository inmuebles,
                              IntegranteRepository integrantes, VinculacionRepository vinculaciones,
                              UsuarioRepository usuarios, AuditoriaService auditoria,
+                             NotificacionService notificaciones,
                              @Value("${app.uploads.dir:./uploads}") String uploadsDir) {
         this.reportes = reportes;
         this.categorias = categorias;
@@ -80,6 +83,7 @@ public class ReporteController {
         this.vinculaciones = vinculaciones;
         this.usuarios = usuarios;
         this.auditoria = auditoria;
+        this.notificaciones = notificaciones;
         this.uploadsDir = uploadsDir;
     }
 
@@ -276,6 +280,7 @@ public class ReporteController {
         guardarSeguimiento(r, auth.getName(), "Responsable asignado: " + nombre(responsable));
 
         auditoria.registrar("ASIGNAR", "Reporte", r.getId(), "Responsable integrante " + responsable.getId());
+        avisarReporte(r, "Se asignó un responsable al reporte.");
         return dto(r, true);
     }
 
@@ -299,6 +304,7 @@ public class ReporteController {
         guardarSeguimiento(r, auth.getName(), "Estado: " + anterior + " -> " + estado);
 
         auditoria.registrar("CAMBIAR_ESTADO", "Reporte", r.getId(), anterior + " -> " + estado);
+        avisarReporte(r, "El reporte pasó de " + anterior + " a " + estado + ".");
         return dto(r, true);
     }
 
@@ -332,10 +338,18 @@ public class ReporteController {
         guardarSeguimiento(r, auth.getName(), "Reporte cerrado. Solución: " + solucion);
 
         auditoria.registrar("CERRAR", "Reporte", r.getId(), null);
+        avisarReporte(r, "El reporte fue cerrado. Solución: " + solucion);
         return dto(r, true);
     }
 
     // ---------- Ayudas ----------
+
+    // CU-17: aviso a los residentes del inmueble (RN-29). Un fallo no afecta a la operación.
+    private void avisarReporte(Reporte r, String texto) {
+        if (r.getInmueble() == null) return;
+        notificaciones.avisar(EventoNotificacion.REPORTE_ACTUALIZADO, r.getInmueble(),
+                "Reporte N.° " + r.getId() + " actualizado", texto);
+    }
 
     private Reporte buscar(Long id) {
         return reportes.findById(id).orElseThrow(() ->
