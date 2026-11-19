@@ -7,18 +7,19 @@
 
   <main class="contenido">
     <header class="encabezado">
-      <h1>Hola, <span th:text="${usuario}">usuario</span></h1>
+      <h1>Hola, <span th:text="${usuario}">usuario</span> 👋</h1>
       <p>Estos son los módulos disponibles para tu rol.</p>
     </header>
 
     <section class="tarjetas">
       <th:block th:each="item, estado : ${menu}">
-        <a th:if="${!estado.first and item.disponible()}"
-           th:href="@{${item.url()}}" class="tarjeta">
+        <a th:if="${!estado.first and item.disponible()}" th:href="@{${item.url()}}" class="tarjeta">
+          <div class="ico" th:text="${#strings.substring(item.titulo(), 0, 1)}">M</div>
           <h2 th:text="${item.titulo()}">Módulo</h2>
           <p>Abrir</p>
         </a>
         <div th:if="${!estado.first and !item.disponible()}" class="tarjeta pronto">
+          <div class="ico" th:text="${#strings.substring(item.titulo(), 0, 1)}">M</div>
           <h2 th:text="${item.titulo()}">Módulo</h2>
           <p>Todavía no está construido.</p>
           <span class="etiqueta">Próximamente</span>

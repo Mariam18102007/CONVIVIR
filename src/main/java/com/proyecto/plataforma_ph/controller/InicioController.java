@@ -92,6 +92,18 @@ public class InicioController {
         return "reportes";
     }
 
+    // Datos de la copropiedad (RF-106)
+    @GetMapping("/configuracion")
+    public String configuracion() {
+        return "configuracion";
+    }
+
+    // Notificaciones: configuración de eventos y destinatarios (CU-17).
+    @GetMapping("/notificaciones")
+    public String notificaciones() {
+        return "notificaciones";
+    }
+
     // ---------- Administrador y consejo ----------
     @GetMapping("/auditoria")
     public String auditoria() {
@@ -162,6 +174,12 @@ public class InicioController {
     @GetMapping("/zonas-comunes")
     public String zonasComunes() {
         return "zonas-comunes";
+    }
+
+    // Bandeja de avisos de propietarios, arrendatarios y residentes autorizados.
+    @GetMapping("/mis-notificaciones")
+    public String misNotificaciones() {
+        return "mis-notificaciones";
     }
 
     // ---------- Propietario, arrendatario y vigilante ----------

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Notificaciones')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .chip.warn { background: #fff4d6; color: #8a5a00; }
+  h2.sub { font-size: 1.1rem; margin: 28px 0 10px; }
+  .tarjeta { margin-bottom: 18px; }
+  select.mini { min-width: 220px; }
+  .evento small { display: block; color: #5b6472; }
+  .fila-prueba { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .fila-prueba .campo { flex: 1 1 220px; margin: 0; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Notificaciones</h1>
+      <p>Elige qué eventos generan un aviso, a quién le llega y si está activo.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <p class="nota">Los avisos de cobro siempre llegan al propietario obligado del pago. Los avisos operativos
+      llegan a los propietarios residentes y arrendatarios del inmueble. Por ahora los avisos se entregan en la
+      bandeja <strong>Notificaciones</strong> de cada residente.</p>
+
+    <h2 class="sub">Eventos</h2>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Evento</th><th>Grupo</th><th>Destinatario</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody id="filasConfig"></tbody>
+      </table>
+    </div>
+
+    <section class="tarjeta" style="margin-top:24px">
+      <h2>Enviar un aviso de prueba</h2>
+      <p class="nota">Sirve para comprobar la configuración. Se envía a quienes correspondan en el inmueble elegido.</p>
+      <div class="fila-prueba">
+        <div class="campo">
+          <label for="pEvento">Evento</label>
+          <select id="pEvento"></select>
+        </div>
+        <div class="campo">
+          <label for="pInmueble">Inmueble</label>
+          <select id="pInmueble"></select>
+        </div>
+        <button type="button" class="btn primario" id="btnProbar">Enviar prueba</button>
+      </div>
+    </section>
+
+    <h2 class="sub">Registro de envíos</h2>
+    <div class="filtros">
+      <select id="fEvento"></select>
+    </div>
+    <div class="tabla-scroll">
+      <table class="tabla">
+        <thead>
+          <tr><th>Fecha</th><th>Evento</th><th>Inmueble</th><th>Destinatario</th><th>Asunto</th><th>Resultado</th></tr>
+        </thead>
+        <tbody id="filasLog"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const DESTINOS = {
+  OBLIGADO_PAGO: 'Propietario obligado del pago',
+  RESIDENTES: 'Propietarios residentes y arrendatarios',
+  TODOS_VINCULADOS: 'Todos los vinculados vigentes'
+};
+let config = [], temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    if (msg.indexOf('Validation') === 0) msg = '';
+    const porEstado = {
+      400: 'Revisa los datos enviados.',
+      403: 'No tienes permiso para esta acción.',
+      404: 'No se encontró el registro.',
+      409: 'La operación no se puede realizar.',
+      500: 'No se pudo completar la operación.'
+    };
+    throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 7000);
+}
+
+/* ---------- Configuración ---------- */
+function opcionesDestino(c) {
+  // RN-28: un aviso de cobro no puede dejar de llegar al propietario.
+  return Object.keys(DESTINOS)
+    .filter(k => !(c.cobro && k === 'RESIDENTES'))
+    .map(k => '<option value="' + k + '"' + (k === c.destinatario ? ' selected' : '') + '>' + DESTINOS[k] + '</option>')
+    .join('');
+}
+
+function pintarConfig() {
+  $('filasConfig').innerHTML = config.map(c => `
+    <tr>
+      <td class="evento"><strong>${esc(c.etiqueta)}</strong><small>${esc(c.descripcion)}</small></td>
+      <td>${esc(c.grupo)} <span class="chip">${c.cobro ? 'Cobro' : 'Operativo'}</span></td>
+      <td><select class="mini" data-dest="${c.evento}">${opcionesDestino(c)}</select></td>
+      <td><span class="chip ${c.habilitado ? 'ok' : 'off'}">${c.habilitado ? 'Habilitado' : 'Deshabilitado'}</span></td>
+      <td>
+        <button class="btn" data-guardar="${c.evento}">Guardar</button>
+        <button class="btn" data-alternar="${c.evento}">${c.habilitado ? 'Deshabilitar' : 'Habilitar'}</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function cargarConfig() {
+  try {
+    config = await api('/api/notificaciones/config');
+    pintarConfig();
+    const opciones = config.map(c => '<option value="' + c.evento + '">' + esc(c.etiqueta) + '</option>').join('');
+    if (!$('pEvento').options.length) $('pEvento').innerHTML = opciones;
+    if (!$('fEvento').options.length) {
+      $('fEvento').innerHTML = '<option value="">Todos los eventos</option>' + opciones;
+    }
+  } catch (e) { aviso(e.message, true); }
+}
+
+$('filasConfig').addEventListener('click', async ev => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.dataset.guardar) {
+      const sel = document.querySelector('select[data-dest="' + b.dataset.guardar + '"]');
+      await api('/api/notificaciones/config/' + b.dataset.guardar, {
+        method: 'PUT', body: JSON.stringify({ destinatario: sel.value })
+      });
+      aviso('Destinatario guardado.');
+    } else if (b.dataset.alternar) {
+      const c = config.find(x => x.evento === b.dataset.alternar);
+      await api('/api/notificaciones/config/' + c.evento, {
+        method: 'PUT', body: JSON.stringify({ habilitado: !c.habilitado })
+      });
+      aviso(c.habilitado ? 'Evento deshabilitado.' : 'Evento habilitado.');
+    } else { return; }
+    await cargarConfig();
+  } catch (e) { aviso(e.message, true); }
+});
+
+/* ---------- Prueba ---------- */
+$('btnProbar').addEventListener('click', async () => {
+  if (!$('pInmueble').value) { aviso('Elige un inmueble.', true); return; }
+  try {
+    const r = await api('/api/notificaciones/probar', {
+      method: 'POST',
+      body: JSON.stringify({ evento: $('pEvento').value, inmuebleId: Number($('pInmueble').value) })
+    });
+    const entregadas = r.filter(n => n.resultado === 'ENTREGADA').length;
+    aviso(entregadas
+      ? 'Aviso enviado a ' + entregadas + ' persona(s).'
+      : 'No hay destinatarios para ese evento en este inmueble. Quedó registrado como "Sin destinatario".');
+    await cargarLog();
+  } catch (e) { aviso(e.message, true); }
+});
+
+/* ---------- Registro ---------- */
+async function cargarLog() {
+  try {
+    const ev = $('fEvento').value;
+    const lista = await api('/api/notificaciones' + (ev ? '?evento=' + encodeURIComponent(ev) : ''));
+    if (!lista.length) {
+      $('filasLog').innerHTML = '<tr><td colspan="6" class="vacio">Todavía no se han enviado avisos.</td></tr>';
+      return;
+    }
+    $('filasLog').innerHTML = lista.map(n => `
+      <tr>
+        <td>${esc(n.fecha)}</td>
+        <td>${esc(n.eventoEtiqueta)}</td>
+        <td>${esc(n.inmueble || '—')}</td>
+        <td>${esc(n.destinatario || '—')}</td>
+        <td>${esc(n.asunto)}</td>
+        <td><span class="chip ${n.resultado === 'ENTREGADA' ? 'ok' : 'warn'}">${esc(n.resultadoEtiqueta)}</span></td>
+      </tr>`).join('');
+  } catch (e) { aviso(e.message, true); }
+}
+
+$('fEvento').addEventListener('change', cargarLog);
+
+(async () => {
+  await cargarConfig();
+  try {
+    const inms = await api('/api/inmuebles?activo=true');
+    $('pInmueble').innerHTML = inms.map(i => '<option value="' + i.id + '">' + esc(i.identificacion) + '</option>').join('');
+  } catch (e) { aviso(e.message, true); }
+  await cargarLog();
+})();
+</script>
+</body>
+</html>

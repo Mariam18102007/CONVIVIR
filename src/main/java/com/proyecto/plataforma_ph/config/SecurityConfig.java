@@ -78,6 +78,15 @@ public class SecurityConfig {
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
                 .requestMatchers(HttpMethod.PATCH, "/api/reservas/*/cancelar")
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
+                // CU-17: notificaciones. Los residentes consultan su bandeja y marcan sus avisos como leídos
+                // (el controlador valida que el aviso sea suyo). Configurar, registro y prueba
+                // caen en /api/** (solo administrador).
+                .requestMatchers(HttpMethod.GET, "/api/notificaciones/mias")
+                    .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
+                .requestMatchers(HttpMethod.POST, "/api/notificaciones/mias/leer-todas")
+                    .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
+                .requestMatchers(HttpMethod.PATCH, "/api/notificaciones/*/leida")
+                    .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
                 // CU-15 y CU-16: reportes y novedades.
                 // Crear y adjuntar evidencia: quienes reportan (el controlador limita el alcance).
                 .requestMatchers(HttpMethod.POST, "/api/reportes", "/api/reportes/*/evidencia")
@@ -128,6 +137,8 @@ public class SecurityConfig {
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
                 .requestMatchers("/zonas-comunes/**")
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
+                .requestMatchers("/mis-notificaciones/**")
+                    .hasAnyRole("PROPIETARIO", "ARRENDATARIO", "RESIDENTE_AUTORIZADO")
                 .requestMatchers("/visitas/**", "/autorizaciones/**", "/mis-vehiculos/**",
                         "/mis-obligaciones/**", "/pasarela-simulada/**")
                     .hasAnyRole("PROPIETARIO", "ARRENDATARIO")
@@ -136,7 +147,8 @@ public class SecurityConfig {
 
                 // Inmuebles, tipos, integrantes, vinculaciones, cuentas, historial de
                 // accesos, gestión de obligaciones, pagos, cartera (exportar, paz y salvo,
-                // intereses), gastos y gestión de reservas: solo administrador.
+                // intereses), gastos, gestión de reservas, configuración de notificaciones
+                // y datos de la copropiedad (/api/configuracion, RF-106): solo administrador.
                 .requestMatchers("/api/**").hasRole("ADMINISTRADOR")
                 .anyRequest().authenticated())
             .formLogin(form -> form

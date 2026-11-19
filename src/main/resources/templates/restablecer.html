@@ -1,39 +1,42 @@
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nueva contraseña</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #f4f6f8; margin: 0; }
-    .card { max-width: 380px; margin: 12vh auto; background: #fff; padding: 28px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
-    h1 { font-size: 1.3rem; margin-top: 0; }
-    label { display: block; margin: 14px 0 4px; font-size: .9rem; }
-    input { width: 100%; padding: 10px; border: 1px solid #cbd2d9; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
-    button { margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #1d4ed8; color: #fff; font-size: 1rem; cursor: pointer; }
-    .msg { padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: .9rem; }
-    .err { background: #fde8e8; color: #9b1c1c; }
-    p.volver { margin: 16px 0 0; text-align: center; font-size: .9rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Nueva contraseña</h1>
+<head th:replace="~{fragments :: cabecera('Nueva contraseña')}"></head>
+<body class="lp">
 
-    <div th:if="${invalido}">
-      <div class="msg err">El enlace no es válido, ya se usó o venció.</div>
-      <p class="volver"><a th:href="@{/recuperar}">Solicitar un enlace nuevo</a></p>
+<header class="lp-nav">
+  <div class="lp-nav-in">
+    <a th:href="@{/login}" class="logo" aria-label="Convivir"><span th:replace="~{fragments :: logo}"></span></a>
+    <nav class="lp-links">
+      <a class="btn btn-link" th:href="@{/login}">Iniciar sesión</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="lp-seccion">
+    <div class="lp-acceso">
+      <div class="lp-login">
+        <h2>Crea tu nueva contraseña</h2>
+
+        <div th:if="${invalido}">
+          <div class="lp-msg err">El enlace no es válido, ya se usó o venció.</div>
+          <a class="olvido" th:href="@{/recuperar}">Solicitar un enlace nuevo</a>
+        </div>
+
+        <form th:unless="${invalido}" th:action="@{/restablecer}" method="post">
+          <div class="lp-msg err" th:if="${error}" th:text="${error}">Error</div>
+          <input type="hidden" name="token" th:value="${token}">
+          <label for="password">Nueva contraseña (mínimo 8 caracteres)</label>
+          <input id="password" name="password" type="password" minlength="8" required autofocus autocomplete="new-password">
+          <label for="confirmar">Repite la contraseña</label>
+          <input id="confirmar" name="confirmar" type="password" minlength="8" required autocomplete="new-password">
+          <button type="submit">Guardar contraseña</button>
+        </form>
+      </div>
     </div>
+  </section>
+</main>
 
-    <form th:unless="${invalido}" th:action="@{/restablecer}" method="post">
-      <div class="msg err" th:if="${error}" th:text="${error}">Error</div>
-      <input type="hidden" name="token" th:value="${token}">
-      <label for="password">Nueva contraseña (mínimo 8 caracteres)</label>
-      <input id="password" name="password" type="password" minlength="8" required autofocus>
-      <label for="confirmar">Repite la contraseña</label>
-      <input id="confirmar" name="confirmar" type="password" minlength="8" required>
-      <button type="submit">Guardar contraseña</button>
-    </form>
-  </main>
+<footer class="lp-pie">Convivir · Proyecto de Ingeniería de Software II · Universidad Simón Bolívar</footer>
 </body>
 </html>

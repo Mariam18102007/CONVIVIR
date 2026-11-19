@@ -1,21 +1,35 @@
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org">
 
-<!-- Cabecera común: se usa con ~{fragments :: cabecera('Título')} -->
+<!-- Cabecera común: ~{fragments :: cabecera('Título')} -->
 <head th:fragment="cabecera(titulo)">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title th:text="${titulo} + ' · Plataforma PH'">Plataforma PH</title>
+  <meta name="theme-color" content="#95D5B2">
+  <title th:text="${titulo} + ' · Convivir'">Convivir</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='14' fill='%23E3F1E4'/%3E%3Cpath d='M9 24 24 11 39 24' fill='none' stroke='%232F6B4F' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='18' cy='29' r='4' fill='%2395D5B2'/%3E%3Ccircle cx='30' cy='29' r='4' fill='%2374C69D'/%3E%3C/svg%3E">
   <link rel="stylesheet" th:href="@{/css/app.css}">
+  <link rel="stylesheet" th:href="@{/css/convivir.css}">
 </head>
 
 <body>
-<!-- Menú lateral común: se usa con ~{fragments :: menu} -->
+<!-- Logo: casa suave, dos personas y un corazón (comunidad y hogar) -->
+<span th:fragment="logo" class="logo">
+  <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Convivir">
+    <rect width="48" height="48" rx="14" fill="#E3F1E4"/>
+    <path d="M9 24 24 11 39 24" stroke="#2F6B4F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 23.4c-2.2-1.6-3.4-2.7-3.4-4a1.9 1.9 0 0 1 3.4-1.1 1.9 1.9 0 0 1 3.4 1.1c0 1.3-1.2 2.4-3.4 4z" fill="#F4B6A0"/>
+    <circle cx="18" cy="29" r="3.8" fill="#95D5B2"/>
+    <circle cx="30" cy="29" r="3.8" fill="#74C69D"/>
+    <path d="M11.5 40c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" stroke="#95D5B2" stroke-width="3" stroke-linecap="round"/>
+    <path d="M23.5 40c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" stroke="#74C69D" stroke-width="3" stroke-linecap="round"/>
+  </svg>
+  <span class="logo-texto">CONVIVIR</span>
+</span>
+
+<!-- Menú lateral común: ~{fragments :: menu} -->
 <aside th:fragment="menu" class="sidebar">
-  <div class="marca">
-    Plataforma PH
-    <small>Gestión de propiedad horizontal</small>
-  </div>
+  <a th:href="@{/}" class="marca"><span th:replace="~{fragments :: logo}"></span></a>
 
   <nav>
     <th:block th:each="item : ${menu}">

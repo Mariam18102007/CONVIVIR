@@ -45,8 +45,8 @@ public class ModeloGlobal {
             menu.add(item("Reservas", "/reservas", true, a));
             menu.add(item("Reportes", "/reportes", true, a));
             menu.add(item("Cuentas", "/cuentas", true, a));
-            menu.add(item("Notificaciones", "/notificaciones", false, a));
-            menu.add(item("Datos de la copropiedad", "/configuracion", false, a));
+            menu.add(item("Notificaciones", "/notificaciones", true, a));
+            menu.add(item("Datos de la copropiedad", "/configuracion", true, a));
             menu.add(item("Auditoría", "/auditoria", true, a));
 
         } else if (tieneRol(auth, "ROLE_MIEMBRO_CONSEJO")) {
@@ -64,6 +64,7 @@ public class ModeloGlobal {
         } else if (tieneRol(auth, "ROLE_RESIDENTE_AUTORIZADO")) {
             menu.add(item("Mi inmueble", "/mis-inmuebles", false, a));
             menu.add(item("Zonas comunes", "/zonas-comunes", true, a));
+            menu.add(item("Notificaciones", "/mis-notificaciones", true, a));
 
         } else {
             // Propietario y arrendatario.
@@ -74,6 +75,7 @@ public class ModeloGlobal {
             menu.add(item("Obligaciones y pagos", "/mis-obligaciones", true, a));
             menu.add(item("Zonas comunes", "/zonas-comunes", true, a));
             menu.add(item("Reportes", "/mis-reportes", true, a));
+            menu.add(item("Notificaciones", "/mis-notificaciones", true, a));
         }
 
         menu.add(item("Mi cuenta", "/cuenta", true, a));

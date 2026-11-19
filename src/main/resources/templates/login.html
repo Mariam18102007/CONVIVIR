@@ -1,36 +1,122 @@
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Iniciar sesión</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #f4f6f8; margin: 0; }
-    .card { max-width: 380px; margin: 12vh auto; background: #fff; padding: 28px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
-    h1 { font-size: 1.3rem; margin-top: 0; }
-    label { display: block; margin: 14px 0 4px; font-size: .9rem; }
-    input { width: 100%; padding: 10px; border: 1px solid #cbd2d9; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
-    button { margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #1d4ed8; color: #fff; font-size: 1rem; cursor: pointer; }
-    .msg { padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: .9rem; }
-    .err { background: #fde8e8; color: #9b1c1c; }
-    .ok { background: #e3f6e8; color: #166534; }
-    p.olvido { margin: 16px 0 0; text-align: center; font-size: .9rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Iniciar sesión</h1>
-    <div class="msg err" th:if="${param.error}">Credenciales inválidas, cuenta inactiva o bloqueada.</div>
-    <div class="msg ok" th:if="${param.logout}">Sesión cerrada.</div>
-    <div class="msg ok" th:if="${param.restablecido}">Contraseña actualizada. Ya puedes iniciar sesión.</div>
-    <form th:action="@{/login}" method="post">
-      <label for="correo">Correo electrónico</label>
-      <input id="correo" name="correo" type="email" required autofocus>
-      <label for="password">Contraseña</label>
-      <input id="password" name="password" type="password" required>
-      <button type="submit">Entrar</button>
-    </form>
-    <p class="olvido"><a th:href="@{/recuperar}">¿Olvidaste tu contraseña?</a></p>
-  </main>
+<head th:replace="~{fragments :: cabecera('Bienvenida')}"></head>
+<body class="lp">
+
+<header class="lp-nav">
+  <div class="lp-nav-in">
+    <a th:href="@{/login}" class="logo" aria-label="Convivir"><span th:replace="~{fragments :: logo}"></span></a>
+    <nav class="lp-links">
+      <a class="enlace" href="#funciones">Funciones</a>
+      <a class="btn btn-link" href="#acceso">Iniciar sesión</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="lp-hero">
+    <div>
+      <span class="lp-etiqueta">Propiedad horizontal, más humana</span>
+      <h1>Convivir es más fácil cuando todo está <span>en un solo lugar</span></h1>
+      <p>Visitas, vehículos, reportes, cuotas y pagos de tu conjunto, claros para vecinos, vigilantes y administración.</p>
+      <div class="lp-acciones">
+        <a class="btn primario btn-link btn-grande" href="#acceso">Empieza ahora</a>
+        <a class="btn btn-link btn-grande" href="#funciones">Ver funciones</a>
+      </div>
+    </div>
+
+    <div class="lp-ilus" aria-hidden="true">
+      <svg viewBox="0 0 480 380" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="240" cy="190" r="175" fill="#E3F1E4"/>
+        <ellipse cx="110" cy="92" rx="38" ry="14" fill="#fff"/><ellipse cx="136" cy="84" rx="26" ry="12" fill="#fff"/>
+        <ellipse cx="380" cy="70" rx="34" ry="12" fill="#fff"/><ellipse cx="402" cy="63" rx="22" ry="10" fill="#fff"/>
+        <path d="M0 300 Q120 268 240 292 T480 284 V380 H0Z" fill="#C9EBD4"/>
+        <!-- casa 1 -->
+        <rect x="72" y="204" width="100" height="86" rx="8" fill="#fff" stroke="#CFE3D2" stroke-width="2"/>
+        <polygon points="62,206 122,150 182,206" fill="#95D5B2" stroke="#95D5B2" stroke-width="8" stroke-linejoin="round"/>
+        <rect x="108" y="244" width="28" height="46" rx="8" fill="#E3F1E4"/>
+        <!-- casa 2 -->
+        <rect x="190" y="170" width="110" height="120" rx="8" fill="#FFF6F0" stroke="#F3DDD0" stroke-width="2"/>
+        <polygon points="182,176 245,112 308,176" fill="#F9C9B6" stroke="#F9C9B6" stroke-width="8" stroke-linejoin="round"/>
+        <rect x="210" y="198" width="26" height="26" rx="7" fill="#fff" stroke="#F3DDD0" stroke-width="2"/>
+        <rect x="254" y="198" width="26" height="26" rx="7" fill="#fff" stroke="#F3DDD0" stroke-width="2"/>
+        <rect x="228" y="246" width="34" height="44" rx="9" fill="#FDE3D6"/>
+        <!-- casa 3 -->
+        <rect x="318" y="210" width="96" height="80" rx="8" fill="#F2F9FF" stroke="#D3E8F8" stroke-width="2"/>
+        <polygon points="310,214 366,162 422,214" fill="#A9D6F5" stroke="#A9D6F5" stroke-width="8" stroke-linejoin="round"/>
+        <rect x="353" y="248" width="26" height="42" rx="8" fill="#D8ECFA"/>
+        <!-- árbol -->
+        <rect x="438" y="244" width="10" height="46" rx="4" fill="#D8C3A5"/>
+        <circle cx="443" cy="224" r="30" fill="#74C69D"/>
+        <!-- vecinos -->
+        <circle cx="170" cy="304" r="14" fill="#F9C9B6"/><rect x="152" y="320" width="36" height="46" rx="18" fill="#95D5B2"/>
+        <circle cx="240" cy="300" r="14" fill="#FDE7A9"/><rect x="222" y="316" width="36" height="50" rx="18" fill="#A9D6F5"/>
+        <circle cx="312" cy="304" r="14" fill="#F9C9B6"/><rect x="294" y="320" width="36" height="46" rx="18" fill="#F4B6A0"/>
+        <!-- corazones -->
+        <path d="M0 6c-4-3-6-5-6-8a3.5 3.5 0 0 1 6-2 3.5 3.5 0 0 1 6 2c0 3-2 5-6 8z" fill="#F4B6A0" transform="translate(205 262)"/>
+        <path d="M0 6c-4-3-6-5-6-8a3.5 3.5 0 0 1 6-2 3.5 3.5 0 0 1 6 2c0 3-2 5-6 8z" fill="#95D5B2" transform="translate(276 258)"/>
+      </svg>
+    </div>
+  </section>
+
+  <section class="lp-seccion" id="funciones">
+    <h2>Todo lo que necesita tu comunidad</h2>
+    <p class="lp-sub">Cada persona ve solo lo que le corresponde.</p>
+    <div class="lp-grid">
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></div>
+        <h3>Inmuebles y personas</h3>
+        <p>Propietarios, arrendatarios y residentes con su historial. La información queda en el inmueble, aunque cambien quienes lo habitan.</p>
+      </article>
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="15" cy="12" r="1"/></svg></div>
+        <h3>Visitas y portería</h3>
+        <p>Anuncia visitas, autoriza accesos recurrentes y deja registrado cada ingreso y salida.</p>
+      </article>
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><path d="M5 16v-5l2-5h10l2 5v5"/><path d="M3 16h18"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></svg></div>
+        <h3>Vehículos y parqueaderos</h3>
+        <p>Cada vehículo pertenece a su inmueble, con cesiones de parqueadero y control en la entrada.</p>
+      </article>
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg></div>
+        <h3>Reportes y novedades</h3>
+        <p>Informa daños con una foto y sigue el arreglo hasta que se cierre.</p>
+      </article>
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h3"/></svg></div>
+        <h3>Cuotas y pagos</h3>
+        <p>Consulta lo que se debe, paga o abona en línea y descarga tu comprobante.</p>
+      </article>
+      <article class="lp-feat">
+        <div class="lp-icono"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Privacidad y transparencia</h3>
+        <p>Acceso por rol y registro de auditoría de las operaciones importantes.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="lp-seccion" id="acceso">
+    <div class="lp-acceso">
+      <div class="lp-login">
+        <h2>Entra a tu comunidad</h2>
+        <p class="nota">Usa el correo con el que te registró la administración.</p>
+        <div class="lp-msg err" th:if="${param.error}">Credenciales inválidas, cuenta inactiva o bloqueada.</div>
+        <div class="lp-msg ok" th:if="${param.logout}">Sesión cerrada.</div>
+        <div class="lp-msg ok" th:if="${param.restablecido}">Contraseña actualizada. Ya puedes entrar.</div>
+        <form th:action="@{/login}" method="post">
+          <label for="correo">Correo electrónico</label>
+          <input id="correo" name="correo" type="email" required autocomplete="username">
+          <label for="password">Contraseña</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password">
+          <button type="submit">Entrar</button>
+        </form>
+        <a class="olvido" th:href="@{/recuperar}">¿Olvidaste tu contraseña?</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="lp-pie">Convivir · Proyecto de Ingeniería de Software II · Universidad Simón Bolívar</footer>
 </body>
 </html>

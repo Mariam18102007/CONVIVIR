@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Datos de la copropiedad')}"></head>
+<body>
+<style>.bloque { max-width: 620px; }</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Datos de la copropiedad</h1>
+      <p>Aparecen en los comprobantes, los recibos de caja y el paz y salvo.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <section class="tarjeta bloque">
+      <form id="form">
+        <div class="campo">
+          <label for="nombre">Nombre</label>
+          <input id="nombre" required maxlength="120" placeholder="Conjunto Residencial ...">
+        </div>
+        <div class="dos">
+          <div class="campo">
+            <label for="nit">NIT</label>
+            <input id="nit" maxlength="30" placeholder="900.000.000-0">
+          </div>
+          <div class="campo">
+            <label for="telefono">Teléfono</label>
+            <input id="telefono" maxlength="30">
+          </div>
+        </div>
+        <div class="campo">
+          <label for="direccion">Dirección</label>
+          <input id="direccion" maxlength="200">
+        </div>
+        <div class="campo">
+          <label for="correo">Correo de contacto</label>
+          <input id="correo" type="email" maxlength="120">
+        </div>
+        <div class="msg-error" id="error" hidden></div>
+        <div class="botones">
+          <button type="submit" class="btn primario">Guardar</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const CAMPOS = ['nombre', 'nit', 'direccion', 'telefono', 'correo'];
+let temporizador = null;
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('Error ' + r.status));
+  }
+  return r.json();
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('error').hidden = true;
+  const body = {};
+  CAMPOS.forEach(c => { body[c] = $(c).value.trim() || null; });
+  try {
+    await api('/api/configuracion', { method: 'PUT', body: JSON.stringify(body) });
+    aviso('Datos guardados.');
+  } catch (err) {
+    $('error').textContent = err.message;
+    $('error').hidden = false;
+  }
+});
+
+(async () => {
+  try {
+    const d = await api('/api/configuracion');
+    CAMPOS.forEach(c => { $(c).value = d[c] || ''; });
+  } catch (e) { aviso(e.message, true); }
+})();
+</script>
+</body>
+</html>

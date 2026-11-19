@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Notificaciones')}"></head>
+<body>
+<style>
+  [hidden] { display: none !important; }
+  .aviso-item { border: 1px solid #d9dee7; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
+  .aviso-item.nueva { border-color: #2f6fed; background: #f1f6ff; }
+  .aviso-item h3 { margin: 0 0 4px; font-size: 1rem; }
+  .aviso-item p { margin: 4px 0; }
+  .aviso-item .meta { color: #5b6472; font-size: .85rem; }
+  .barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+</style>
+<div class="app">
+  <aside th:replace="~{fragments :: menu}"></aside>
+
+  <main class="contenido">
+    <header class="encabezado">
+      <h1>Notificaciones</h1>
+      <p>Avisos de la administración sobre tu inmueble: cobros, pagos, reportes y accesos.</p>
+    </header>
+
+    <div id="aviso" class="aviso" hidden></div>
+
+    <div class="barra">
+      <span id="resumen" class="nota" style="margin:0"></span>
+      <button type="button" class="btn" id="btnLeerTodas">Marcar todas como leídas</button>
+    </div>
+
+    <div id="lista"></div>
+  </main>
+</div>
+
+<script>
+let datos = [], temporizador = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(url, opciones) {
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
+  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+  if (!r.ok) {
+    let msg = '';
+    try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+    throw new Error(msg || ('Error ' + r.status));
+  }
+  const texto = await r.text();
+  return texto ? JSON.parse(texto) : null;
+}
+
+function aviso(msg, error) {
+  const el = $('aviso');
+  el.textContent = msg;
+  el.className = error ? 'aviso error' : 'aviso';
+  el.hidden = false;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+function pintar() {
+  const nuevas = datos.filter(n => !n.leida).length;
+  $('resumen').textContent = datos.length
+    ? (nuevas ? nuevas + ' sin leer de ' + datos.length : 'Todo leído (' + datos.length + ')')
+    : '';
+  $('btnLeerTodas').hidden = nuevas === 0;
+  if (!datos.length) {
+    $('lista').innerHTML = '<p class="vacio">No tienes notificaciones por ahora.</p>';
+    return;
+  }
+  $('lista').innerHTML = datos.map(n => `
+    <div class="aviso-item ${n.leida ? '' : 'nueva'}">
+      <h3>${esc(n.asunto)}</h3>
+      <p>${esc(n.mensaje)}</p>
+      <p class="meta">${esc(n.fecha)} · ${esc(n.eventoEtiqueta)}${n.inmueble ? ' · Inmueble ' + esc(n.inmueble) : ''}</p>
+      ${n.leida ? '' : '<button class="btn" data-leida="' + n.id + '">Marcar como leída</button>'}
+    </div>`).join('');
+}
+
+async function cargar() {
+  try { datos = await api('/api/notificaciones/mias'); pintar(); }
+  catch (e) { aviso(e.message, true); }
+}
+
+$('lista').addEventListener('click', async ev => {
+  const b = ev.target.closest('button[data-leida]');
+  if (!b) return;
+  try { await api('/api/notificaciones/' + b.dataset.leida + '/leida', { method: 'PATCH' }); await cargar(); }
+  catch (e) { aviso(e.message, true); }
+});
+
+$('btnLeerTodas').addEventListener('click', async () => {
+  try { await api('/api/notificaciones/mias/leer-todas', { method: 'POST' }); await cargar(); }
+  catch (e) { aviso(e.message, true); }
+});
+
+cargar();
+</script>
+</body>
+</html>
