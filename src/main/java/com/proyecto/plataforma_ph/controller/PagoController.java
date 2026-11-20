@@ -1,3 +1,4 @@
+
 package com.proyecto.plataforma_ph.controller;
 
 import com.proyecto.plataforma_ph.model.*;
@@ -381,7 +382,7 @@ public class PagoController {
     private boolean visibleParaResidente(Pago p, Alcance a) {
         if (a == null) return false;
         if (a.propietario()) return true;
-        return p.getDetalles().stream().allMatch(d -> d.getObligacion().getConcepto().isOrdinaria());
+        return p.getDetalles().stream().allMatch(d -> d.getObligacion().getConcepto().isPagableArrendatario());
     }
 
     private void armarDetalles(Pago p, List<ItemPago> items, boolean soloOrdinarias) {
@@ -407,9 +408,9 @@ public class PagoController {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "La obligación " + o.getId() + " ya no está pendiente");
             }
-            if (soloOrdinarias && !o.getConcepto().isOrdinaria()) {
+            if (soloOrdinarias && !o.getConcepto().isPagableArrendatario()) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "Como arrendatario solo puede pagar la cuota de administración");
+                        "Como arrendatario solo puede pagar la cuota de administración y el alquiler de zonas comunes");
             }
             if (it.valor() > o.getSaldo()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,

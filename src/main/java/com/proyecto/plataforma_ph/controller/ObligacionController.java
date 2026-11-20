@@ -1,3 +1,4 @@
+
 package com.proyecto.plataforma_ph.controller;
 
 import com.proyecto.plataforma_ph.model.*;
@@ -344,7 +345,7 @@ public class ObligacionController {
         return obligaciones.findByInmuebleIdInOrderByIdDesc(ids).stream()
                 .filter(o -> o.getEstado() != EstadoObligacion.ANULADA)
                 .filter(o -> alcance.get(o.getInmueble().getId()).propietario()
-                        || o.getConcepto().isOrdinaria())
+                        || o.getConcepto().isPagableArrendatario())
                 .toList();
     }
 

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org">
 <head th:replace="~{fragments :: cabecera('Obligaciones y pagos')}"></head>
@@ -61,8 +62,8 @@
       <button class="btn primario" id="btnPagar" type="button" disabled>Pagar con la pasarela</button>
       <span class="nota" style="margin:0">Marca las obligaciones de un mismo inmueble. Puedes escribir un valor menor al saldo para abonar.</span>
     </div>
-    <p class="nota" id="notaArrendatario" hidden>Como arrendatario ves y pagas solo la cuota de administración.
-      Las multas y cuotas extraordinarias son del propietario.</p>
+    <p class="nota" id="notaArrendatario" hidden>Como arrendatario ves y pagas la cuota de administración y el alquiler de zonas comunes.
+      Las multas, cuotas extraordinarias e intereses son del propietario.</p>
 
     <h2 class="sub">Historial de pagos</h2>
     <section class="filtros">
@@ -129,7 +130,6 @@ function pintarResumen() {
     </div>`).join('');
   $('fInmueble').innerHTML = '<option value="">Todos</option>' +
     resumen.map(r => `<option value="${r.inmuebleId}">${esc(r.inmueble)}</option>`).join('');
-  $('notaArrendatario').hidden = !resumen.some(r => r.vinculo === 'Arrendatario');
 }
 
 /* ---------- Obligaciones con selección ---------- */

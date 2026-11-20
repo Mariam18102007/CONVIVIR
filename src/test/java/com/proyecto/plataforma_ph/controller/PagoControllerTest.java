@@ -1,3 +1,4 @@
+
 package com.proyecto.plataforma_ph.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -347,6 +348,19 @@ class PagoControllerTest {
 
         var inicio = controller.iniciarPasarela(
                 new NuevoPagoPasarela(10L, List.of(new ItemPago(1L, 40_000L))), auth);
+
+        assertNotNull(inicio.referencia());
+        verify(pagos).save(any(Pago.class));
+    }
+
+    @Test
+    void arrendatarioSiPuedePagarElAlquilerDeUnaZona() {
+        vinculadoComo(TipoVinculo.ARRENDATARIO);
+        Obligacion alquiler = obligacion(5L, inmueble, ConceptoObligacion.ALQUILER_ZONA, 60_000L);
+        when(obligaciones.findById(5L)).thenReturn(Optional.of(alquiler));
+
+        var inicio = controller.iniciarPasarela(
+                new NuevoPagoPasarela(10L, List.of(new ItemPago(5L, 60_000L))), auth);
 
         assertNotNull(inicio.referencia());
         verify(pagos).save(any(Pago.class));
