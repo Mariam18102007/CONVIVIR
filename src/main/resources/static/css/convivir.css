@@ -143,6 +143,19 @@ dialog::backdrop { background: rgba(30, 41, 35, .35); }
 .lp-msg.ok { background: #E3F1E4; color: #2F6B4F; }
 .lp-pie { text-align: center; color: var(--texto-suave); font-size: .85rem; padding: 28px 20px 36px; }
 
+/* ---------- Ajustes finales de color (sustituyen restos del tema azul) ---------- */
+body .chip.info { background: #E3F1E4; color: #2F6B4F; }
+body .chip.warn { background: #FFF1D6; color: #8A5A00; }
+body .texto-largo { background: var(--menta); border-color: var(--borde); }
+body .aviso-item.nueva { border-color: var(--primario-hover); background: var(--menta); }
+body .aviso-item .meta, body .evento small { color: var(--texto-suave); }
+body .resultado.ok { background: #E3F1E4; color: #2F6B4F; }
+body .resultado.mal { background: #FDECEA; color: #9B3B34; }
+body .aviso-sim { background: #FFF1D6; color: #8A5A00; border-radius: 12px; }
+body .linea li { border-left-color: var(--primario); }
+body .centro .tarjeta { border-radius: 20px; padding: 26px; }
+body .valor { color: var(--primario-fuerte); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   .lp-hero { grid-template-columns: 1fr; padding-top: 28px; }
