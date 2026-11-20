@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org">
+
 <head th:replace="~{fragments :: cabecera('Autorizaciones recurrentes')}"></head>
+
 <body>
+
 <style>
   .check { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: .9rem; }
   .check input { width: auto; }
@@ -9,6 +12,7 @@
   .dias label { display: flex; align-items: center; gap: 5px; font-size: .88rem; }
   .dias input { width: auto; }
 </style>
+
 <div class="app">
   <aside th:replace="~{fragments :: menu}"></aside>
 
@@ -36,8 +40,15 @@
       <table class="tabla">
         <thead>
           <tr>
-            <th>Persona</th><th>Documento</th><th>Motivo</th><th>Vigencia</th>
-            <th>Días</th><th>Horario</th><th>Parq.</th><th>Estado</th><th></th>
+            <th>Persona</th>
+            <th>Documento</th>
+            <th>Motivo</th>
+            <th>Vigencia</th>
+            <th>Días</th>
+            <th>Horario</th>
+            <th>Parq.</th>
+            <th>Estado</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="filas"></tbody>
@@ -59,10 +70,12 @@
         <input id="documento" required maxlength="30">
       </div>
     </div>
+
     <div class="campo">
       <label for="motivo">Motivo del acceso</label>
       <input id="motivo" required maxlength="200" placeholder="Aseo, cuidado, mantenimiento...">
     </div>
+
     <div class="dos">
       <div class="campo">
         <label for="inicio">Vigente desde</label>
@@ -73,7 +86,9 @@
         <input id="fin" type="date" required>
       </div>
     </div>
+
     <div class="campo" style="margin-bottom:4px"><label>Días permitidos</label></div>
+
     <div class="dias" id="dias">
       <label><input type="checkbox" value="LUNES"> Lun</label>
       <label><input type="checkbox" value="MARTES"> Mar</label>
@@ -83,6 +98,7 @@
       <label><input type="checkbox" value="SABADO"> Sáb</label>
       <label><input type="checkbox" value="DOMINGO"> Dom</label>
     </div>
+
     <div class="dos">
       <div class="campo">
         <label for="horaInicio">Hora de inicio</label>
@@ -93,9 +109,25 @@
         <input id="horaFin" type="time" required value="17:00">
       </div>
     </div>
-    <label class="check"><input id="parq" type="checkbox"> Autorizar también el uso de parqueadero</label>
+
+    <label class="check">
+      <input id="parq" type="checkbox">
+      Autorizar también el uso de parqueadero
+    </label>
+
     <p class="nota">Por defecto la autorización no da derecho a parqueadero. Se vence sola al llegar la fecha final.</p>
+
+    <label class="check">
+      <input id="consentimiento" type="checkbox" required>
+      Confirmo que la persona autorizada aceptó que se registren sus datos para el control de acceso.
+    </label>
+
+    <p class="nota">Solo se usan para la seguridad del conjunto. Más información en la
+      <a href="/privacidad" target="_blank" rel="noopener">política de privacidad</a>.
+    </p>
+
     <div class="msg-error" id="error" hidden></div>
+
     <div class="botones">
       <button type="button" class="btn" id="btnCerrar">Cancelar</button>
       <button type="submit" class="btn primario">Guardar</button>
@@ -105,24 +137,38 @@
 
 <script>
 let lista = [], temporizador = null;
+
 const $ = id => document.getElementById(id);
+
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const hoy = () => {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 };
+
 const ESTADOS = { VIGENTE: 'ok', UTILIZADA: '', CANCELADA: 'off', VENCIDA: 'off', REVOCADA: 'off' };
+
 const CORTO = { LUNES: 'Lun', MARTES: 'Mar', MIERCOLES: 'Mié', JUEVES: 'Jue', VIERNES: 'Vie', SABADO: 'Sáb', DOMINGO: 'Dom' };
+
 const hora = h => h ? String(h).substring(0, 5) : '';
 
 async function api(url, opciones) {
   const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opciones));
-  if (r.status === 401) { location.href = '/login'; throw new Error('Sesión vencida'); }
+
+  if (r.status === 401) {
+    location.href = '/login';
+    throw new Error('Sesión vencida');
+  }
+
   if (!r.ok) {
     let msg = '';
+
     try { msg = (await r.json()).message || ''; } catch (e) { /* sin cuerpo */ }
+
     if (msg.indexOf('Validation') === 0) msg = '';
+
     const porEstado = {
       400: 'Revisa los datos: hay campos obligatorios sin llenar.',
       403: 'No tienes permiso para esta acción.',
@@ -130,8 +176,10 @@ async function api(url, opciones) {
       409: 'La operación no se puede realizar.',
       500: 'No se pudo guardar.'
     };
+
     throw new Error(msg || porEstado[r.status] || ('Error ' + r.status));
   }
+
   const texto = await r.text();
   return texto ? JSON.parse(texto) : null;
 }
@@ -141,6 +189,7 @@ function aviso(msg, error) {
   el.textContent = msg;
   el.className = error ? 'aviso error' : 'aviso';
   el.hidden = false;
+
   clearTimeout(temporizador);
   temporizador = setTimeout(() => { el.hidden = true; }, 5000);
 }
@@ -160,6 +209,7 @@ function pintar() {
     $('filas').innerHTML = '<tr><td colspan="9" class="vacio">No hay autorizaciones para mostrar.</td></tr>';
     return;
   }
+
   $('filas').innerHTML = lista.map(a => `
     <tr>
       <td><strong>${esc(a.nombre)}</strong><br><small>${esc(a.inmueble)}</small></td>
@@ -178,12 +228,16 @@ function pintar() {
 $('filas').addEventListener('click', async e => {
   const b = e.target.closest('button');
   if (!b || !b.dataset.revocar) return;
+
   if (!confirm('¿Revocar esta autorización? La persona ya no podrá entrar con ella.')) return;
+
   try {
     await api('/api/autorizaciones/' + b.dataset.revocar + '/revocar', { method: 'PATCH' });
     aviso('Autorización revocada.');
     await cargar();
-  } catch (err) { aviso(err.message, true); }
+  } catch (err) {
+    aviso(err.message, true);
+  }
 });
 
 $('btnNueva').addEventListener('click', () => {
@@ -196,16 +250,20 @@ $('btnNueva').addEventListener('click', () => {
   $('error').hidden = true;
   $('dlg').showModal();
 });
+
 $('btnCerrar').addEventListener('click', () => $('dlg').close());
 
 $('form').addEventListener('submit', async e => {
   e.preventDefault();
+
   const dias = Array.from(document.querySelectorAll('#dias input:checked')).map(x => x.value);
+
   if (!dias.length) {
     $('error').textContent = 'Elige al menos un día de la semana.';
     $('error').hidden = false;
     return;
   }
+
   const body = {
     nombre: $('nombre').value.trim(),
     documento: $('documento').value.trim(),
@@ -217,8 +275,10 @@ $('form').addEventListener('submit', async e => {
     horaFin: $('horaFin').value,
     usaParqueadero: $('parq').checked
   };
+
   try {
     await api('/api/autorizaciones', { method: 'POST', body: JSON.stringify(body) });
+
     $('dlg').close();
     aviso('Autorización registrada.');
     await cargar();
@@ -229,7 +289,9 @@ $('form').addEventListener('submit', async e => {
 });
 
 $('fTodas').addEventListener('change', cargar);
+
 cargar();
 </script>
+
 </body>
 </html>

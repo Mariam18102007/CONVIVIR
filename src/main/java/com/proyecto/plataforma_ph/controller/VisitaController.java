@@ -5,8 +5,10 @@ import com.proyecto.plataforma_ph.repository.AutorizacionRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
 import com.proyecto.plataforma_ph.repository.VinculacionRepository;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
+
 import java.time.LocalDate;
 import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class VisitaController {
 
     public record VisitaRequest(Long inmuebleId, String nombre, String documento,
-                                LocalDate fechaInicio, LocalDate fechaFin, Boolean usaParqueadero) {}
+                                LocalDate fechaInicio, LocalDate fechaFin, Boolean usaParqueadero,
+                                Boolean consentimiento) {}
 
     public record VisitaDto(Long id, String nombre, String documento, Long inmuebleId,
                             String inmueble, LocalDate fechaInicio, LocalDate fechaFin,
@@ -43,18 +46,27 @@ public class VisitaController {
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
     public VisitaDto registrar(@RequestBody VisitaRequest req, Authentication auth) {
+
+        if (!Boolean.TRUE.equals(req.consentimiento())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Debe confirmar que el visitante autorizó el registro de sus datos");
+        }
+
         if (req.nombre() == null || req.nombre().isBlank()
                 || req.documento() == null || req.documento().isBlank()
                 || req.fechaInicio() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Debe indicar nombre, documento y fecha de la visita");
         }
+
         LocalDate inicio = req.fechaInicio();
         LocalDate fin = req.fechaFin() != null ? req.fechaFin() : inicio;
+
         if (inicio.isBefore(LocalDate.now())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "La fecha de la visita no puede estar en el pasado");
         }
+
         if (fin.isBefore(inicio)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "La fecha final no puede ser anterior a la inicial");
@@ -77,6 +89,7 @@ public class VisitaController {
         // No se guardan datos del visitante en la auditoría (minimización).
         auditoria.registrar("CREAR", "Autorizacion", a.getId(),
                 "Visita ocasional al inmueble " + inmueble.getIdentificacion());
+
         return aDto(a);
     }
 
@@ -101,14 +114,18 @@ public class VisitaController {
         if (!a.getAutorizante().getId().equals(residente.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Esa visita no es suya");
         }
+
         if (a.getEstado() != EstadoAutorizacion.VIGENTE) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Solo se puede cancelar una visita que aún no ha ingresado");
         }
+
         a.setEstado(EstadoAutorizacion.CANCELADA);
         autorizaciones.save(a);
+
         auditoria.registrar("CANCELAR", "Autorizacion", a.getId(),
                 "Visita ocasional al inmueble " + a.getInmueble().getIdentificacion());
+
         return aDto(a);
     }
 
@@ -123,7 +140,7 @@ public class VisitaController {
         List<Inmueble> propios = vinculaciones
                 .findByIntegranteIdAndEstado(residente.getId(), EstadoVinculacion.VIGENTE).stream()
                 .filter(v -> v.getTipoVinculo() == TipoVinculo.PROPIETARIO_RESIDENTE
-                          || v.getTipoVinculo() == TipoVinculo.ARRENDATARIO)
+                        || v.getTipoVinculo() == TipoVinculo.ARRENDATARIO)
                 .map(Vinculacion::getInmueble)
                 .filter(Inmueble::isActivo)
                 .toList();
@@ -132,15 +149,18 @@ public class VisitaController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Necesita una vinculación vigente como propietario residente o arrendatario");
         }
+
         if (inmuebleId != null) {
             return propios.stream().filter(i -> i.getId().equals(inmuebleId)).findFirst()
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
                             "No tiene vinculación vigente con ese inmueble"));
         }
+
         if (propios.size() > 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Está vinculado a varios inmuebles: indique inmuebleId");
         }
+
         return propios.get(0);
     }
 

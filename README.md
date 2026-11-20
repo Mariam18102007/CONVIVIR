@@ -1,4 +1,4 @@
-# Plataforma para la gestión y control de propiedades horizontales
+# CONVIVIR — Plataforma para la gestión y control de propiedades horizontales
 
 Aplicación web para administrar conjuntos residenciales y edificios sometidos al régimen de propiedad horizontal en Colombia (Ley 675 de 2001).
 
@@ -34,6 +34,7 @@ Cada persona se relaciona con un inmueble mediante una **vinculación** con tipo
 | Recaudo y gastos | Consejo y administrador | Recaudo por canal y medio (consejo); gastos (consejo consulta, administrador registra y anula) |
 | Reservas de zonas comunes | Residentes y administrador | Disponibilidad, solicitud y cancelación; confirmación, rechazo, finalización, multas y tarifas (administrador) |
 | Notificaciones | Administrador y residentes | Configurar eventos y destinatarios; bandeja de avisos de cada residente |
+| Política de privacidad | Todos | Pantalla pública con la política de tratamiento de datos (Ley 1581 de 2012) |
 
 ## Roles
 
@@ -52,7 +53,7 @@ Cada rol ve solo su menú y solo la información que le corresponde:
 - Permisos por rol en cada ruta y validación de la vinculación con el inmueble en el servidor.
 - Auditoría de las operaciones relevantes, sin guardar contraseñas, tokens ni datos personales de visitantes.
 - Imágenes de evidencia validadas por su contenido real, con nombre generado por el servidor y fuera del repositorio.
-- La política de datos sigue la Ley 1581 de 2012 y el principio de minimización.
+- La política de datos sigue la Ley 1581 de 2012 y el principio de minimización, y está disponible en pantalla en `/privacidad`.
 
 ## Tecnologías
 
@@ -67,8 +68,8 @@ Cada rol ve solo su menú y solo la información que le corresponde:
 Requisitos: **JDK 21 o superior**. No hay que instalar Maven ni una base de datos.
 
 ```bash
-git clone https://github.com/Mariam18102007/plataforma-ph.git
-cd plataforma-ph
+git clone https://github.com/Mariam18102007/CONVIVIR.git
+cd CONVIVIR
 ./mvnw spring-boot:run        # en Windows: .\mvnw.cmd spring-boot:run
 ```
 
@@ -109,11 +110,15 @@ SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true
 ### Con Docker
 
 ```bash
-docker build -t plataforma-ph .
-docker run -p 8080:8080 -v ph-data:/app/data plataforma-ph
+docker build -t convivir-ph .
+docker run -d --name convivir-app -p 8080:8080 -v "$(pwd)/docker-data:/app/data" convivir-ph
 ```
 
-La base y las imágenes se guardan en `/app/data`; el volumen evita perderlas al recrear el contenedor. Para enviar correos reales agrega al `docker run` las variables `-e APP_BASE_URL=... -e SPRING_MAIL_HOST=... -e SPRING_MAIL_PORT=587 ...`.
+En PowerShell (Windows) el volumen se escribe `-v "${PWD}/docker-data:/app/data"`.
+
+La base y las imágenes se guardan en la carpeta `docker-data` (dentro del contenedor, `/app/data`); al estar fuera del contenedor no se pierden al recrearlo y no se suben al repositorio. Para enviar correos reales agrega al `docker run` las variables `-e APP_BASE_URL=... -e SPRING_MAIL_HOST=... -e SPRING_MAIL_PORT=587 ...`.
+
+Para ver la contraseña aleatoria del administrador la primera vez: `docker logs convivir-app`.
 
 ### Pruebas
 
@@ -148,12 +153,13 @@ Los avisos (vencimientos, pagos, reportes, visitantes y autorizaciones) se entre
 
 La recuperación de contraseña envía el enlace por correo con `CorreoService`. Si no hay SMTP configurado, el mensaje (con el enlace) se escribe en el log del servidor, lo que sirve para desarrollo.
 
-## Pendiente
+## Limitaciones conocidas
 
-- Envío por correo de comprobantes y avisos de la bandeja.
-- Política de tratamiento de datos y aviso de privacidad en pantalla.
-- Endurecimiento para producción: HTTPS, cookies seguras, CSRF en la API y pasarela real.
-- Más pruebas automáticas.
+- La pasarela de pagos es una simulación.
+- Los comprobantes y los avisos de la bandeja no se envían por correo; solo el correo de recuperación de contraseña sale por SMTP.
+- Pruebas automáticas: cubren pagos, obligaciones, cartera, reservas, portería, notificaciones, cuenta, historial, permisos por rol y mis inmuebles. Faltan los demás módulos.
+- Endurecimiento para producción: la API REST no usa token CSRF, y HTTPS y los respaldos de la base dependen de cómo se despliegue (ver las secciones correspondientes cuando se agreguen).
+- No hay función en el sistema para anonimizar o suprimir los datos de un titular; las solicitudes se atienden por la administración, como indica la política de privacidad.
 
 ## Fuera del alcance de esta versión
 

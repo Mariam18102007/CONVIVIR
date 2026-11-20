@@ -1,0 +1,120 @@
+package com.proyecto.plataforma_ph.controller;
+
+import com.proyecto.plataforma_ph.model.EstadoVinculacion;
+import com.proyecto.plataforma_ph.model.Integrante;
+import com.proyecto.plataforma_ph.model.Usuario;
+import com.proyecto.plataforma_ph.repository.IntegranteRepository;
+import com.proyecto.plataforma_ph.repository.TokenRecuperacionRepository;
+import com.proyecto.plataforma_ph.repository.UsuarioRepository;
+import com.proyecto.plataforma_ph.repository.VinculacionRepository;
+import com.proyecto.plataforma_ph.security.AuditoriaService;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+/**
+ * Supresión de datos personales por anonimización (sección 15.7 del documento).
+ * Los hechos del inmueble se conservan (vinculaciones con sus fechas, pagos, reportes, accesos),
+ * pero el integrante deja de ser identificable. No procede mientras tenga un vínculo vigente.
+ * Solo administrador (cae en /api/**).
+ */
+@RestController
+@RequestMapping("/api/integrantes")
+public class AnonimizacionController {
+
+    static final String PREFIJO = "ANON-";
+
+    public record Resultado(Long id, String nombres, String apellidos, boolean cuentaDesactivada) {}
+
+    private final IntegranteRepository integrantes;
+    private final UsuarioRepository usuarios;
+    private final VinculacionRepository vinculaciones;
+    private final TokenRecuperacionRepository tokens;
+    private final PasswordEncoder encoder;
+    private final AuditoriaService auditoria;
+
+    public AnonimizacionController(IntegranteRepository integrantes, UsuarioRepository usuarios,
+                                   VinculacionRepository vinculaciones, TokenRecuperacionRepository tokens,
+                                   PasswordEncoder encoder, AuditoriaService auditoria) {
+        this.integrantes = integrantes;
+        this.usuarios = usuarios;
+        this.vinculaciones = vinculaciones;
+        this.tokens = tokens;
+        this.encoder = encoder;
+        this.auditoria = auditoria;
+    }
+
+    @PatchMapping("/{id}/anonimizar")
+    @Transactional
+    public Resultado anonimizar(@PathVariable Long id, @RequestParam String motivo, Authentication auth) {
+        if (motivo == null || motivo.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El motivo es obligatorio");
+        }
+        String m = motivo.trim();
+        if (m.length() > 200) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El motivo no puede pasar de 200 caracteres");
+        }
+        Integrante i = integrantes.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Integrante no encontrado"));
+
+        if (i.getNumeroDocumento() != null && i.getNumeroDocumento().startsWith(PREFIJO)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ese integrante ya está anonimizado");
+        }
+        if (i.isActivo()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Primero desactive al integrante. La supresión no procede con la persona activa");
+        }
+        if (!vinculaciones.findByIntegranteIdAndEstado(id, EstadoVinculacion.VIGENTE).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Tiene vinculaciones vigentes: finalícelas antes de anonimizar");
+        }
+        Optional<Usuario> cuenta = usuarios.findByIntegranteId(id);
+        if (cuenta.isPresent() && cuenta.get().getCorreo().equalsIgnoreCase(auth.getName())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No puede anonimizar su propia cuenta");
+        }
+
+        // Los datos identificatorios se borran; la fila, sus vinculaciones y fechas se conservan.
+        i.setTipoDocumento("NA");
+        i.setNumeroDocumento(PREFIJO + id);
+        i.setNombres("Anonimizado");
+        i.setApellidos("#" + id);
+        i.setTelefono(null);
+        i.setCorreo(null);
+        i.setGenero(null);
+        i.setFechaNacimiento(null);
+        i.setRazonSocial(null);
+        i.setNumeroContrato(null);
+        i.setParentesco(null);
+        i.setCargo(null);
+        i.setPeriodoConsejo(null);
+        i.setEmpresaSeguridad(null);
+        i.setTurno(null);
+        i.setMotivoDesactivacion("Datos anonimizados. " + m);
+        integrantes.save(i);
+
+        boolean cuentaCerrada = false;
+        if (cuenta.isPresent()) {
+            Usuario u = cuenta.get();
+            u.setCorreo("anonimo-" + id + "@anonimo.invalid");
+            u.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+            u.setActivo(false);
+            u.setBloqueado(true);
+            usuarios.save(u);
+            tokens.findByUsuarioIdAndUsadoFalse(u.getId()).forEach(t -> t.setUsado(true));
+            cuentaCerrada = true;
+        }
+
+        // El motivo no incluye datos personales: el nombre anterior no se guarda en la auditoría.
+        auditoria.registrar("ANONIMIZAR", "Integrante", id, "Motivo: " + m);
+        return new Resultado(id, i.getNombres(), i.getApellidos(), cuentaCerrada);
+    }
+}
