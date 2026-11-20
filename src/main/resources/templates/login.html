@@ -112,11 +112,12 @@
           <button type="submit">Entrar</button>
         </form>
         <a class="olvido" th:href="@{/recuperar}">¿Olvidaste tu contraseña?</a>
+        <p class="nota" style="text-align:center;margin:12px 0 0">Al entrar aceptas el tratamiento de tus datos según la <a th:href="@{/privacidad}">política de privacidad</a>.</p>
       </div>
     </div>
   </section>
 </main>
 
-<footer class="lp-pie">Convivir · Proyecto de Ingeniería de Software II · Universidad Simón Bolívar</footer>
+<footer class="lp-pie">Convivir · Proyecto de Ingeniería de Software II · Universidad Simón Bolívar · <a th:href="@{/privacidad}">Política de privacidad</a></footer>
 </body>
 </html>

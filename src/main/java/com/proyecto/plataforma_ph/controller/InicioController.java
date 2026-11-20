@@ -1,6 +1,7 @@
 package com.proyecto.plataforma_ph.controller;
 
 import com.proyecto.plataforma_ph.config.ModulosPendientes;
+import com.proyecto.plataforma_ph.repository.ConfiguracionCopropiedadRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -12,6 +13,12 @@ import org.springframework.web.server.ResponseStatusException;
 @Controller
 public class InicioController {
 
+    private final ConfiguracionCopropiedadRepository configuracion;
+
+    public InicioController(ConfiguracionCopropiedadRepository configuracion) {
+        this.configuracion = configuracion;
+    }
+
     private boolean tieneRol(Authentication auth, String rol) {
         return auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals(rol));
     }
@@ -19,6 +26,13 @@ public class InicioController {
     @GetMapping("/login")
     public String login() {
         return "login";
+    }
+
+    // Política de tratamiento de datos personales (pública).
+    @GetMapping("/privacidad")
+    public String privacidad(Model model) {
+        model.addAttribute("copropiedad", configuracion.findById(1L).orElse(null));
+        return "privacidad";
     }
 
     @GetMapping("/")

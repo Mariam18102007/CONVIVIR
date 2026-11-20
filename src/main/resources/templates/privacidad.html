@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: cabecera('Política de privacidad')}"></head>
+<body class="lp">
+<style>
+  .legal { max-width: 820px; margin: 0 auto; padding: 36px 20px 20px; }
+  .legal h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); margin: 0 0 6px; color: #2B4A3B; letter-spacing: -.01em; }
+  .legal .fecha { color: var(--texto-suave); margin: 0 0 24px; }
+  .legal section { background: #fff; border: 1px solid var(--borde); border-radius: 20px; padding: 22px 26px; margin-bottom: 16px; box-shadow: var(--sombra); }
+  .legal h2 { font-size: 1.15rem; margin: 0 0 10px; color: #2B4A3B; }
+  .legal p, .legal li { color: var(--texto); font-size: .97rem; }
+  .legal ul { margin: 8px 0 0; padding-left: 20px; }
+  .legal li { margin-bottom: 4px; }
+  .legal .resumen { background: var(--menta); }
+  .legal dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin: 10px 0 0; }
+  .legal dt { color: var(--texto-suave); font-weight: 600; }
+  .legal dd { margin: 0; }
+  @media (max-width: 560px) { .legal dl { grid-template-columns: 1fr; } .legal section { padding: 18px; } }
+</style>
+
+<header class="lp-nav">
+  <div class="lp-nav-in">
+    <a th:href="@{/}" class="logo" aria-label="Convivir"><span th:replace="~{fragments :: logo}"></span></a>
+    <nav class="lp-links">
+      <a class="btn btn-link" th:href="@{/}">Volver</a>
+    </nav>
+  </div>
+</header>
+
+<main class="legal">
+  <h1>Política de tratamiento de datos personales</h1>
+  <p class="fecha">Última actualización: noviembre de 2026</p>
+
+  <section class="resumen">
+    <h2>En pocas palabras</h2>
+    <p>Convivir guarda los datos que necesita la administración de la propiedad horizontal para gestionar inmuebles, accesos, vehículos, reportes, cuotas y pagos. Solo los usa para eso, cada persona ve únicamente lo que le corresponde según su rol, y tú puedes consultar, corregir o pedir la supresión de tus datos cuando quieras.</p>
+  </section>
+
+  <section>
+    <h2>1. Responsable del tratamiento</h2>
+    <p>El responsable de los datos es la administración de la propiedad horizontal que usa esta plataforma:</p>
+    <dl>
+      <dt>Copropiedad</dt><dd th:text="${copropiedad?.nombre} ?: 'Administración de la propiedad horizontal'">Administración de la propiedad horizontal</dd>
+      <dt th:if="${copropiedad?.nit}">NIT</dt><dd th:if="${copropiedad?.nit}" th:text="${copropiedad.nit}">NIT</dd>
+      <dt th:if="${copropiedad?.direccion}">Dirección</dt><dd th:if="${copropiedad?.direccion}" th:text="${copropiedad.direccion}">Dirección</dd>
+      <dt th:if="${copropiedad?.correo}">Correo</dt><dd th:if="${copropiedad?.correo}" th:text="${copropiedad.correo}">Correo</dd>
+      <dt th:if="${copropiedad?.telefono}">Teléfono</dt><dd th:if="${copropiedad?.telefono}" th:text="${copropiedad.telefono}">Teléfono</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>2. Marco legal</h2>
+    <p>Esta política se rige por la Ley 1581 de 2012 (protección de datos personales), el Decreto 1377 de 2013 (incorporado en el Decreto 1074 de 2015) y la Ley 675 de 2001 (régimen de propiedad horizontal).</p>
+  </section>
+
+  <section>
+    <h2>3. Datos que recolectamos</h2>
+    <ul>
+      <li><strong>Identificación y contacto:</strong> tipo y número de documento, nombres, apellidos, teléfono y correo. Según el caso, también género y fecha de nacimiento.</li>
+      <li><strong>Cuenta de acceso:</strong> correo y contraseña (guardada cifrada, nunca en texto plano).</li>
+      <li><strong>Vínculo con el inmueble:</strong> si eres propietario, arrendatario o residente autorizado, y el periodo del vínculo.</li>
+      <li><strong>Vehículos:</strong> placa y tipo de vehículo.</li>
+      <li><strong>Visitas y accesos:</strong> nombre y documento del visitante, motivo, placa y hora de ingreso y salida.</li>
+      <li><strong>Reportes y novedades:</strong> descripción y, si se adjunta, la foto de evidencia.</li>
+      <li><strong>Cuotas y pagos:</strong> obligaciones, abonos, fecha, medio de pago, referencia y recibo. La plataforma no guarda números de tarjeta.</li>
+      <li><strong>Reservas y avisos:</strong> reservas de zonas comunes y notificaciones enviadas.</li>
+      <li><strong>Auditoría:</strong> registro de las operaciones importantes y de quién las hizo.</li>
+    </ul>
+    <p>No solicitamos datos sensibles, como salud, origen racial, orientación política o datos biométricos.</p>
+  </section>
+
+  <section>
+    <h2>4. Para qué usamos los datos</h2>
+    <ul>
+      <li>Administrar los inmuebles, sus integrantes y sus vínculos.</li>
+      <li>Controlar el ingreso de visitantes, autorizados y vehículos al conjunto.</li>
+      <li>Generar cuotas, registrar pagos y emitir comprobantes, recibos y paz y salvo.</li>
+      <li>Atender reportes, novedades y reservas de zonas comunes.</li>
+      <li>Enviarte avisos de vencimientos, pagos y novedades de tu inmueble.</li>
+      <li>Proteger la seguridad del conjunto y de la plataforma, y cumplir obligaciones legales.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>5. Quién puede ver tus datos</h2>
+    <p>El acceso es por rol: el administrador gestiona la información de la copropiedad, el consejo consulta información financiera, el vigilante ve lo necesario para la portería y cada residente ve solo lo de su inmueble. No vendemos tus datos. Solo se comparten con terceros cuando la ley lo exige o para prestar un servicio necesario, como la pasarela de pagos o el envío de correos.</p>
+  </section>
+
+  <section>
+    <h2>6. Tus derechos</h2>
+    <p>Como titular de los datos puedes:</p>
+    <ul>
+      <li>Conocer, actualizar y rectificar tus datos.</li>
+      <li>Pedir prueba de la autorización que diste para su tratamiento.</li>
+      <li>Ser informado del uso que se ha dado a tus datos.</li>
+      <li>Revocar la autorización o pedir la supresión de tus datos, cuando no exista un deber legal o contractual de conservarlos.</li>
+      <li>Presentar quejas ante la Superintendencia de Industria y Comercio (SIC).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>7. Cómo ejercer tus derechos</h2>
+    <p>Puedes actualizar tus datos de contacto en la sección <strong>Mi cuenta</strong>. Para cualquier otra consulta o reclamo, escribe a la administración por los datos de contacto del numeral 1. Las consultas se responden en máximo 10 días hábiles y los reclamos en máximo 15 días hábiles, prorrogables según la ley.</p>
+  </section>
+
+  <section>
+    <h2>8. Seguridad y conservación</h2>
+    <p>Las contraseñas se guardan cifradas, el acceso depende del rol, las cuentas se bloquean tras varios intentos fallidos y las operaciones importantes quedan en un registro de auditoría. Conservamos los datos mientras exista tu vínculo con la copropiedad y durante los plazos que exija la ley, por ejemplo para soportes de pagos y cartera.</p>
+  </section>
+
+  <section>
+    <h2>9. Datos de menores de edad</h2>
+    <p>Si se registran datos de menores, por ejemplo como residentes del inmueble, se tratan solo con autorización de su representante legal y respetando el interés superior del menor.</p>
+  </section>
+
+  <section>
+    <h2>10. Cambios a esta política</h2>
+    <p>Si esta política cambia, publicaremos la nueva versión en esta misma página con su fecha de actualización.</p>
+  </section>
+</main>
+
+<footer class="lp-pie">Convivir · Proyecto de Ingeniería de Software II · Universidad Simón Bolívar</footer>
+</body>
+</html>

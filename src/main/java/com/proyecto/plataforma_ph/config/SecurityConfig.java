@@ -25,8 +25,8 @@ public class SecurityConfig {
             // Spring usa la primera regla que coincide: los módulos nuevos
             // agregan la suya ANTES de /api/**.
             .authorizeHttpRequests(auth -> auth
-                // RF-002: rutas públicas (login, recuperación de contraseña y estilos).
-                .requestMatchers("/login", "/recuperar", "/restablecer", "/css/**").permitAll()
+                // RF-002: rutas públicas (login, recuperación de contraseña, política de privacidad y estilos).
+                .requestMatchers("/login", "/recuperar", "/restablecer", "/privacidad", "/css/**").permitAll()
                 // RF-003: cualquier usuario con sesión gestiona su propia cuenta.
                 .requestMatchers("/api/cuenta/**").authenticated()
                 // RF-026: cada residente consulta sus propias vinculaciones (el controlador filtra por usuario).
