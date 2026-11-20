@@ -1,12 +1,17 @@
 package com.proyecto.plataforma_ph.config;
 
 import com.proyecto.plataforma_ph.controller.InicioController;
+
 import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.ArrayList;
 import java.util.List;
+
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+
 import org.springframework.ui.Model;
+
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
@@ -18,7 +23,35 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 @ControllerAdvice(assignableTypes = {InicioController.class})
 public class ModeloGlobal {
 
-    public record ItemMenu(String titulo, String url, boolean disponible, boolean activo) {}
+    public record ItemMenu(String titulo, String url, boolean disponible, boolean activo) {
+
+        /** Nombre del ícono del sprite (#i-nombre en fragments.html). */
+        public String icono() {
+            return switch (url) {
+                case "/" -> "home";
+                case "/inmuebles", "/mis-inmuebles" -> "home";
+                case "/historial-inmueble" -> "building";
+                case "/tipos-inmueble" -> "tag";
+                case "/integrantes", "/cuentas" -> "users";
+                case "/vinculaciones" -> "link";
+                case "/vehiculos", "/mis-vehiculos", "/control-vehicular" -> "car";
+                case "/parqueaderos" -> "parking";
+                case "/historial-accesos", "/porteria", "/visitas", "/autorizaciones" -> "door";
+                case "/obligaciones", "/mis-obligaciones" -> "receipt";
+                case "/pagos" -> "card";
+                case "/cartera" -> "wallet";
+                case "/gastos" -> "coin";
+                case "/recaudo" -> "chart";
+                case "/reservas", "/zonas-comunes" -> "calendar";
+                case "/reportes", "/mis-reportes" -> "flag";
+                case "/notificaciones", "/mis-notificaciones" -> "bell";
+                case "/configuracion" -> "settings";
+                case "/auditoria" -> "shield";
+                case "/cuenta" -> "user";
+                default -> "dot";
+            };
+        }
+    }
 
     @ModelAttribute
     public void datosComunes(Authentication auth, HttpServletRequest request, Model model) {
