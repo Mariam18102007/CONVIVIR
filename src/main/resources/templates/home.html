@@ -8,7 +8,7 @@
   <main class="contenido">
     <section class="hero">
       <div class="hero-texto">
-        <h1>¡Hola, <span th:text="${#strings.substringBefore(usuario, '@')}">admin</span>!<br>Así amanece hoy tu copropiedad</h1>
+        <h1><span id="saludo">¡Hola!</span><br>Así amanece hoy tu copropiedad</h1>
         <p id="fechaHoy"></p>
       </div>
       <svg class="hero-ilus" viewBox="0 0 380 200" aria-hidden="true">
@@ -55,6 +55,10 @@ const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP',
 const hoy = new Date();
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 $('fechaHoy').textContent = hoy.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+// Saludo según la hora del día
+const hora = hoy.getHours();
+$('saludo').textContent = hora < 12 ? '¡Buenos días!' : hora < 19 ? '¡Buenas tardes!' : '¡Buenas noches!';
 
 const get = async url => { try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; } };
 const n = x => (x == null ? '—' : x);
