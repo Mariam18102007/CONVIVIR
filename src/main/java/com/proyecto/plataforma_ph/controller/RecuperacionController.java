@@ -5,7 +5,7 @@ import com.proyecto.plataforma_ph.model.Usuario;
 import com.proyecto.plataforma_ph.repository.TokenRecuperacionRepository;
 import com.proyecto.plataforma_ph.repository.UsuarioRepository;
 import com.proyecto.plataforma_ph.security.AuditoriaService;
-import jakarta.servlet.http.HttpServletRequest;
+import com.proyecto.plataforma_ph.service.CorreoService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,13 +34,20 @@ public class RecuperacionController {
     private final TokenRecuperacionRepository tokens;
     private final PasswordEncoder encoder;
     private final AuditoriaService auditoria;
+    private final CorreoService correos;
+    private final String baseUrl;
 
     public RecuperacionController(UsuarioRepository usuarios, TokenRecuperacionRepository tokens,
-                                  PasswordEncoder encoder, AuditoriaService auditoria) {
+                                  PasswordEncoder encoder, AuditoriaService auditoria,
+                                  CorreoService correos,
+                                  @Value("${app.base-url}") String baseUrl) {
         this.usuarios = usuarios;
         this.tokens = tokens;
         this.encoder = encoder;
         this.auditoria = auditoria;
+        this.correos = correos;
+        // El enlace se arma con la URL configurada, nunca con el Host de la petición.
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
     @GetMapping("/recuperar")
@@ -50,7 +58,7 @@ public class RecuperacionController {
     // La respuesta es la misma exista o no la cuenta, para no revelar qué correos están registrados.
     @PostMapping("/recuperar")
     @Transactional
-    public String solicitar(@RequestParam String correo, HttpServletRequest request, Model model) {
+    public String solicitar(@RequestParam String correo, Model model) {
         Optional<Usuario> encontrado = usuarios.findByCorreoIgnoreCase(correo.trim())
                 .filter(Usuario::isActivo);
 
@@ -70,10 +78,13 @@ public class RecuperacionController {
             t.setExpira(LocalDateTime.now().plusMinutes(MINUTOS_VIGENCIA));
             tokens.save(t);
 
-            String enlace = request.getScheme() + "://" + request.getServerName() + ":"
-                    + request.getServerPort() + "/restablecer?token=" + token;
-            // Cuando exista el servicio de notificaciones (CU-17), aquí se envía el correo.
-            System.out.println(">>> ENLACE DE RECUPERACION para " + u.getCorreo() + ": " + enlace);
+            String enlace = baseUrl + "/restablecer?token=" + token;
+            // Asíncrono: el tiempo de respuesta no revela si el correo existe.
+            correos.enviar(u.getCorreo(), "Restablece tu contraseña · Convivir",
+                    "Hola,\n\nRecibimos una solicitud para restablecer tu contraseña.\n"
+                            + "Entra al siguiente enlace (vale " + MINUTOS_VIGENCIA
+                            + " minutos y solo sirve una vez):\n\n"
+                            + enlace + "\n\nSi no fuiste tú, ignora este mensaje.");
 
             auditoria.registrar("SOLICITAR_RECUPERACION", "Usuario", u.getId(),
                     "Cuenta: " + u.getCorreo());

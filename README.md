@@ -18,7 +18,7 @@ Cada persona se relaciona con un inmueble mediante una **vinculación** con tipo
 | Historial de inmueble | Administrador | Vinculaciones, obligaciones, pagos, reportes y accesos de una unidad |
 | Integrantes y vinculaciones | Administrador | Registrar personas y relacionarlas con inmuebles, con historial |
 | Mi inmueble | Propietario, arrendatario y residente autorizado | Consultar sus propias vinculaciones vigentes |
-| Cuentas, recuperación de contraseña y Mi cuenta | Todos | Cuentas de acceso, cambio de contraseña y datos de contacto propios |
+| Cuentas, recuperación de contraseña y Mi cuenta | Todos | Cuentas de acceso, recuperación por correo, cambio de contraseña y datos de contacto propios |
 | Datos de la copropiedad | Administrador | Nombre, NIT, dirección y contacto |
 | Auditoría | Administrador y consejo | Registro de operaciones con filtros y exportación a CSV |
 | Visitas y autorizaciones recurrentes | Propietario y arrendatario | Anunciar visitas y autorizar accesos periódicos con días y horarios |
@@ -48,7 +48,7 @@ Cada rol ve solo su menú y solo la información que le corresponde:
 ## Seguridad y protección de datos
 
 - Contraseñas con BCrypt y bloqueo de la cuenta tras varios intentos fallidos.
-- Recuperación de contraseña con token temporal de un solo uso (se guarda solo su hash).
+- Recuperación de contraseña con token temporal de un solo uso (se guarda solo su hash). El enlace se arma con `APP_BASE_URL`, no con el encabezado `Host` de la petición, y el correo se envía de forma asíncrona para no revelar qué cuentas existen.
 - Permisos por rol en cada ruta y validación de la vinculación con el inmueble en el servidor.
 - Auditoría de las operaciones relevantes, sin guardar contraseñas, tokens ni datos personales de visitantes.
 - Imágenes de evidencia validadas por su contenido real, con nombre generado por el servidor y fuera del repositorio.
@@ -57,7 +57,7 @@ Cada rol ve solo su menú y solo la información que le corresponde:
 ## Tecnologías
 
 - Java 21
-- Spring Boot 4.0.9 (Spring MVC, Spring Security, Spring Data JPA)
+- Spring Boot 4.0.9 (Spring MVC, Spring Security, Spring Data JPA, Spring Mail)
 - Hibernate 7 y SQLite
 - Thymeleaf y JavaScript sin frameworks para las pantallas
 - Maven (con el wrapper incluido)
@@ -91,6 +91,20 @@ Si no existe ningún usuario, se crea el administrador `admin@ph.local` (o el de
 | `UPLOADS_DIR` | Carpeta de las imágenes de evidencia | `./uploads` |
 | `ADMIN_CORREO` | Correo del administrador inicial | `admin@ph.local` |
 | `ADMIN_PASSWORD` | Contraseña del administrador inicial | aleatoria |
+| `APP_BASE_URL` | URL pública con la que se arman los enlaces de los correos | `http://localhost:8080` |
+| `MAIL_FROM` | Remitente de los correos | `no-reply@convivir.local` |
+| `MAIL_CONSOLA` | Sin SMTP, escribe el mensaje en el log (poner `false` en producción) | `true` |
+| `SPRING_MAIL_HOST` | Servidor SMTP. Si no se define, no se envían correos reales | sin definir |
+| `SPRING_MAIL_PORT` | Puerto SMTP (por ejemplo, 587) | sin definir |
+| `SPRING_MAIL_USERNAME` | Usuario SMTP | sin definir |
+| `SPRING_MAIL_PASSWORD` | Contraseña SMTP | sin definir |
+
+Para un SMTP con autenticación y STARTTLS (por ejemplo, Gmail con contraseña de aplicación) agrega también:
+
+```
+SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH=true
+SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true
+```
 
 ### Con Docker
 
@@ -99,7 +113,7 @@ docker build -t plataforma-ph .
 docker run -p 8080:8080 -v ph-data:/app/data plataforma-ph
 ```
 
-La base y las imágenes se guardan en `/app/data`; el volumen evita perderlas al recrear el contenedor.
+La base y las imágenes se guardan en `/app/data`; el volumen evita perderlas al recrear el contenedor. Para enviar correos reales agrega al `docker run` las variables `-e APP_BASE_URL=... -e SPRING_MAIL_HOST=... -e SPRING_MAIL_PORT=587 ...`.
 
 ### Pruebas
 
@@ -117,7 +131,7 @@ src/main/java/com/proyecto/plataforma_ph/
 ├── pasarela/      Pasarela de pagos (hoy simulada, lista para cambiarla por una real)
 ├── repository/    Acceso a datos
 ├── security/      Autenticación, bloqueo de cuentas y auditoría
-└── service/       Notificaciones y avisos de vencimiento
+└── service/       Notificaciones, correo y avisos de vencimiento
 src/main/resources/
 ├── static/css/    Estilos
 └── templates/     Pantallas
@@ -128,13 +142,15 @@ src/test/java/     Pruebas
 
 La integración funciona como una pasarela real: se inicia el pago, la persona lo aprueba o rechaza en la pasarela y el sistema consulta el resultado. **Un pago solo se confirma cuando la pasarela devuelve un resultado válido.** Hoy la pasarela es una simulación, sin movimiento de dinero real. Cambiarla por un proveedor real (por ejemplo, Wompi en modo de pruebas) solo requiere una clase nueva que implemente la interfaz `PasarelaPago`.
 
-## Notificaciones
+## Notificaciones y correo
 
-Los avisos (vencimientos, pagos, reportes, visitantes y autorizaciones) se entregan en la bandeja de cada residente. Los avisos de cobro van al propietario obligado del pago y los operativos a propietarios residentes y arrendatarios. El envío por correo aún no está implementado; en la recuperación de contraseña el enlace se muestra en la consola del servidor.
+Los avisos (vencimientos, pagos, reportes, visitantes y autorizaciones) se entregan en la bandeja de cada residente. Los avisos de cobro van al propietario obligado del pago y los operativos a propietarios residentes y arrendatarios.
+
+La recuperación de contraseña envía el enlace por correo con `CorreoService`. Si no hay SMTP configurado, el mensaje (con el enlace) se escribe en el log del servidor, lo que sirve para desarrollo.
 
 ## Pendiente
 
-- Envío real de correos (recuperación de contraseña y comprobantes).
+- Envío por correo de comprobantes y avisos de la bandeja.
 - Política de tratamiento de datos y aviso de privacidad en pantalla.
 - Endurecimiento para producción: HTTPS, cookies seguras, CSRF en la API y pasarela real.
 - Más pruebas automáticas.
